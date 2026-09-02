@@ -20,7 +20,7 @@ from fotosort.group import cluster_scenes
 from fotosort.labels import bucket_name, load_labels
 from fotosort.quality import exposure, load_small, sharpness, signature, to_gray
 from fotosort.scan import capture_time, find_jpegs, sidecars
-from fotosort.select import Candidate, select_day
+from fotosort.select import Candidate, ScenedCandidate, build_shortlist, select_day
 
 
 @dataclass
@@ -34,6 +34,7 @@ class Photo:
     subject: float = 0.0  # largest detected person/animal box, fraction of frame
     edge: bool = False  # that box touches the frame border
     judge_reason: str = ""
+    shortlisted: bool = False
     sharpness: float = 0.0
     clip_low: float = 0.0
     clip_high: float = 0.0
@@ -76,12 +77,16 @@ def parse_args(argv=None):
                    help="Let a vision model choose the final picks from each group's shortlist")
     p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic"], help="API for --judge")
     p.add_argument("--judge-model", help="Model for --judge (default: gpt-5.6-sol / claude-opus-5)")
+    p.add_argument("--shortlist-max", type=int, default=30,
+                   help="Frames per group shown to the judge (at least this, or 3x the group's budget)")
+    p.add_argument("--taste-dir", help="Folder with photos you love; frames that resemble them get a score bonus")
+    p.add_argument("--taste-weight", type=float, default=0.5, help="Max bonus from --taste-dir")
     p.add_argument("--judge-detail", default="high", choices=["high", "low"],
                    help="Image detail sent to the OpenAI judge: high judges sharpness and faces, low is ~10x cheaper")
     p.add_argument("--key-file", help="File holding the API key (a .env or YAML line), instead of the environment")
     p.add_argument("--detector", default="yolov8m.pt", help="YOLOv8 weights for subject detection (n/s/m/l)")
     p.add_argument("--aesthetic-weight", type=float, default=0.6, help="Weight of aesthetics vs sharpness (0..1)")
-    p.add_argument("--blur-ratio", type=float, default=0.3, help="Reject if sharpness < ratio * day median")
+    p.add_argument("--blur-ratio", type=float, default=0.15, help="Reject if sharpness < ratio * day median")
     p.add_argument("--blur-floor", type=float, default=20.0, help="Reject if sharpness below this absolute value")
     p.add_argument("--labels", help="Text file with one subject label per line (overrides defaults)")
     p.add_argument("--person-area", type=float, default=0.02,
@@ -194,6 +199,21 @@ def _z(x: np.ndarray) -> np.ndarray:
     return (x - x.mean()) / s if s > 1e-6 else np.zeros_like(x)
 
 
+def taste_bonus(photos: list[Photo], taste_dir: str, weight: float, emb) -> None:
+    """Score bonus for resembling the user's own favourites: CLIP similarity to
+    the closest reference photo, mapped from 0.6 (unrelated) to 0.9 (same kind
+    of shot) onto 0..weight. Adds to score before selection and shortlisting."""
+    refs = find_jpegs(Path(taste_dir).expanduser().resolve(), recursive=False, exclude_dirs=set())
+    if not refs:
+        print(f"No JPEGs in --taste-dir {taste_dir}")
+        return
+    ref_emb = emb.embed_batch([emb.prepare(load_small(str(r))) for r in refs])
+    for ph in photos:
+        sim = float(np.max(ref_emb @ ph.emb))
+        ph.score += weight * float(np.clip((sim - 0.6) / 0.3, 0.0, 1.0))
+    print(f"Taste bonus from {len(refs)} reference photos applied")
+
+
 def subject_term(ph: Photo, weight: float) -> float:
     """Reward a clearly visible subject, punish a small one cut off by the frame.
     0 for no detection or a subject under 1 % of the frame; +1.5*weight at 30 %+.
@@ -217,7 +237,10 @@ def score_and_reject(photos: list[Photo], args) -> None:
     for i, ph in enumerate(photos):
         penalty = 3.0 * max(0.0, ph.clip_high - 0.02) + 2.0 * max(0.0, ph.clip_low - 0.10)
         ph.score = w * float(aest[i]) + (1 - w) * float(sharp[i]) - penalty + subject_term(ph, args.subject_weight)
-        if ph.sharpness < args.blur_floor or ph.sharpness < args.blur_ratio * day_median[ph.day]:
+        # the Laplacian measure is texture-dependent (a smooth white gull reads as soft), so with a judge
+        # on only the absolute floor rejects; the judge sees a 100% crop and decides sharpness itself
+        ratio = 0.0 if args.judge else args.blur_ratio
+        if ph.sharpness < args.blur_floor or ph.sharpness < ratio * day_median[ph.day]:
             ph.reject = "blurry"
         elif ph.clip_high > 0.4 or ph.clip_low > 0.6:
             ph.reject = "exposure"
@@ -265,6 +288,19 @@ def apply_person_override(photos: list[Photo], min_area: float) -> None:
             p.label, p.label_prob = "people", max(p.label_prob, p.person)
 
 
+def judge_boxes(photos: list[Photo], judge) -> dict[str, tuple | None]:
+    """Subject boxes for the judge's 100% crops, detected on the fly for the shortlist only."""
+    det = getattr(judge, "detector", None)
+    if det is None:
+        return {}
+    smalls = []
+    for p in photos:
+        im = load_small(str(p.path))
+        im.thumbnail((640, 640))
+        smalls.append(im)
+    return {str(p.path): d["box"] for p, d in zip(photos, det.detect(smalls))}
+
+
 def pick_budget(n_photos: int, base: int, extra_per: int) -> int:
     """Base picks plus one per `extra_per` photos, capped at 3x base: a 450-frame
     afternoon of the same subject deserves more keepers than a 6-frame one."""
@@ -287,16 +323,17 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
         if judge is None:
             chosen = set(select_day(cands, budgets, args.dup_sim, args.dup_pixel, args.min_score))
         else:
-            # shortlist ~3x the budget per group, then let the judge choose
-            shortlist = select_day(cands, {l: max(k + 3, 3 * k) for l, k in budgets.items()},
-                                   args.dup_sim, args.dup_pixel, args.min_score)
             chosen = set()
             for label, k in budgets.items():
-                ids = [i for i in shortlist if by_path[i].label == label]
+                group = [p for p in day_buckets[label] if not p.reject]
+                sc = [ScenedCandidate(str(p.path), p.score, p.label, p.emb, p.sig, p.scene) for p in group]
+                ids = build_shortlist(sc, max(args.shortlist_max, 3 * k))
                 if not ids:
                     continue
-                ids = ids[: min(len(ids), 20)]  # keep each request modest
-                verdict = judge.judge([Path(i) for i in ids], label, day, k)
+                for i in ids:
+                    by_path[i].shortlisted = True
+                boxes = judge_boxes([by_path[i] for i in ids], judge)
+                verdict = judge.judge([Path(i) for i in ids], label, day, k, boxes)
                 if verdict.error:
                     tqdm.write(f"Judge failed for {day} {label} ({verdict.error}); using scores instead")
                     chosen.update(ids[:k])
@@ -312,7 +349,7 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
 
 def write_report(photos: list[Photo], path: Path) -> None:
     cols = ["file", "datetime", "day", "label", "label_prob", "person", "subject", "edge", "scene", "sharpness",
-            "clip_low", "clip_high", "aesthetic", "score", "reject", "selected", "judge_reason"]
+            "clip_low", "clip_high", "aesthetic", "score", "reject", "shortlisted", "selected", "judge_reason"]
     with open(path, "w", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(cols)
@@ -321,7 +358,7 @@ def write_report(photos: list[Photo], path: Path) -> None:
                 str(ph.path), ph.time.isoformat() if ph.time else "", ph.day, ph.label,
                 f"{ph.label_prob:.2f}", f"{ph.person:.3f}", f"{ph.subject:.3f}", int(ph.edge), ph.scene,
                 f"{ph.sharpness:.1f}", f"{ph.clip_low:.3f}", f"{ph.clip_high:.3f}", f"{ph.aesthetic:.2f}",
-                f"{ph.score:.3f}", ph.reject, int(ph.selected), ph.judge_reason,
+                f"{ph.score:.3f}", ph.reject, int(ph.shortlisted), int(ph.selected), ph.judge_reason,
             ])
 
 
@@ -371,11 +408,18 @@ def main(argv=None) -> int:
     labels = load_labels(args.labels)
     assign_scenes_and_labels(photos, emb.text_embeddings(labels), labels, args)
     score_and_reject(photos, args)
+    if args.taste_dir:
+        taste_bonus(photos, args.taste_dir, args.taste_weight, emb)
     judge = None
     if args.judge:
         from fotosort.judge import Judge
 
         judge = Judge(args.judge_provider, args.judge_model, args.key_file, args.judge_detail)
+        judge.detector = None
+        if args.person_area > 0:
+            from fotosort.embed import SubjectDetector
+
+            judge.detector = SubjectDetector(device=emb.device, weights=args.detector)
         print(f"Judging shortlists with {judge.model} ...")
     buckets = select_photos(photos, args, judge)
     if judge is not None:

@@ -53,3 +53,31 @@ def select_day(
         picked.append(c)
         count[c.bucket] += 1
     return [c.id for c in picked]
+
+
+@dataclass
+class ScenedCandidate(Candidate):
+    scene: int = -1
+
+
+def build_shortlist(cands: list[ScenedCandidate], cap: int, pixel_dup: float = 0.97) -> list[str]:
+    """What the judge gets to see for one bucket: the best frame of every scene
+    (burst) first, then the next-best frames by score, up to `cap`. Only
+    pixel-identical frames (thumbnail correlation >= `pixel_dup`) are dropped;
+    deciding between similar-but-different moments is the judge's job."""
+    ranked = sorted(cands, key=lambda c: c.score, reverse=True)
+    kept: list[ScenedCandidate] = []
+    for c in ranked:
+        if any(c.sig is not None and p.sig is not None and float(np.dot(c.sig, p.sig)) >= pixel_dup for p in kept):
+            continue
+        kept.append(c)
+    seen_scenes: set[int] = set()
+    out: list[ScenedCandidate] = []
+    for c in kept:  # pass 1: one per scene
+        if c.scene not in seen_scenes:
+            out.append(c)
+            seen_scenes.add(c.scene)
+    for c in kept:  # pass 2: fill by score
+        if c not in out:
+            out.append(c)
+    return [c.id for c in out[:cap]]

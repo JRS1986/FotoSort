@@ -17,3 +17,19 @@ def test_subject_bonus_grows_with_size_and_caps():
 def test_small_subject_at_frame_edge_is_penalised_but_large_one_is_not():
     assert subject_term(_p(0.04, edge=True), 0.4) < 0
     assert subject_term(_p(0.6, edge=True), 0.4) > 0
+
+
+def test_taste_bonus_rewards_similar_frames(tmp_path, capsys):
+    import numpy as np
+    from fotosort.cli import taste_bonus
+    from PIL import Image
+    Image.new("RGB", (64, 64), (200, 30, 30)).save(tmp_path / "fav.jpg")
+
+    class FakeEmb:
+        def prepare(self, img): return img
+        def embed_batch(self, imgs): return np.array([[1.0, 0.0]], dtype=np.float32)
+
+    like = Photo(path=Path("a.jpg"), key="a", emb=np.array([1.0, 0.0], dtype=np.float32), score=0.0)
+    unlike = Photo(path=Path("b.jpg"), key="b", emb=np.array([0.0, 1.0], dtype=np.float32), score=0.0)
+    taste_bonus([like, unlike], str(tmp_path), 0.5, FakeEmb())
+    assert abs(like.score - 0.5) < 1e-6 and unlike.score == 0.0

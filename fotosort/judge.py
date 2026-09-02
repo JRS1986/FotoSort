@@ -44,11 +44,22 @@ SYSTEM = (
 )
 
 PROMPT = (
-    "These {n} photos were taken on {day} and show: {subject}. Choose up to {k} keepers. "
-    "They must be technically good and as different from each other as possible (different pose, "
-    "composition, moment or individual). Choose fewer than {k} if the rest are weak, blurry, "
-    "show only a tiny or cut-off subject, or are near-duplicates of a better frame. "
+    "These {n} photos were taken on {day} and show: {subject}. Where a photo has a '100% crop' after it, "
+    "that is the same photo's main subject at full resolution: use it to judge focus and sharpness "
+    "(the eye or face must be crisp), and to check that the subject is not looking away. "
+    "Choose up to {k} keepers for a family travel album: technically good, as different from each "
+    "other as possible (different pose, composition, moment or individual), and including atmospheric "
+    "scenery or environmental shots, not only close-ups. Use the full budget of {k} when there are "
+    "enough decent, distinct frames; drop a frame only when it is clearly worse than another keeper, "
+    "soft, shows a tiny or cut-off subject, or is a near-duplicate. Unless every frame is unusable, "
+    "always keep at least the single best one. "
     'Reply with JSON only, in this shape: {{"picks": [{{"photo": 3, "reason": "short reason"}}]}}'
+)
+
+RETRY_PROMPT = (
+    "You kept none of these {n} photos of {subject} from {day}. That is acceptable only if every frame is "
+    "unusable. Otherwise pick exactly the single best one, even if imperfect, and say what it does well. "
+    'Reply with JSON only: {{"picks": [{{"photo": 3, "reason": "short reason"}}]}}'
 )
 
 
@@ -59,11 +70,33 @@ class Verdict:
     error: str | None = None    # set when the judge could not run; caller falls back
 
 
-def _jpeg_b64(path: Path, max_side: int = 1024) -> str:
-    img = load_small(str(path), max_side)
+def _to_b64(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=80)
     return base64.standard_b64encode(buf.getvalue()).decode("ascii")
+
+
+def _jpeg_b64(path: Path, max_side: int = 1024) -> str:
+    return _to_b64(load_small(str(path), max_side))
+
+
+def subject_crop(path: Path, box: tuple[float, float, float, float], side: int = 512, margin: float = 0.25) -> str:
+    """Native-resolution crop around the subject box (normalised coords), padded
+    by `margin` of the box size, capped at `side` px. Shows whether the eye is sharp."""
+    from PIL import ImageOps
+
+    img = ImageOps.exif_transpose(Image.open(path))
+    w, h = img.size
+    x1, y1, x2, y2 = box[0] * w, box[1] * h, box[2] * w, box[3] * h
+    mx, my = (x2 - x1) * margin, (y2 - y1) * margin
+    x1, y1, x2, y2 = max(0, x1 - mx), max(0, y1 - my), min(w, x2 + mx), min(h, y2 + my)
+    if (x2 - x1) < side and (y2 - y1) < side:  # small subject: take a `side` window around it
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        x1, y1 = max(0, cx - side / 2), max(0, cy - side / 2)
+        x2, y2 = min(w, x1 + side), min(h, y1 + side)
+    crop = img.crop((int(x1), int(y1), int(x2), int(y2))).convert("RGB")
+    crop.thumbnail((side, side))
+    return _to_b64(crop)
 
 
 def parse_verdict(text: str, ids: list[str]) -> Verdict:
@@ -106,10 +139,27 @@ class Judge:
 
             self.client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
 
-    def judge(self, paths: list[Path], subject: str, day: str, k: int) -> Verdict:
+    def judge(self, paths: list[Path], subject: str, day: str, k: int,
+              boxes: dict[str, tuple | None] | None = None) -> Verdict:
         ids = [str(p) for p in paths]
-        images = [_jpeg_b64(p, 1024 if self.detail == "high" else 512) for p in paths]
-        prompt = PROMPT.format(n=len(paths), day=day, subject=subject, k=k)
+        images = []
+        for p in paths:
+            crop = None
+            box = (boxes or {}).get(str(p))
+            if box is not None:
+                try:
+                    crop = subject_crop(p, box)
+                except Exception:
+                    crop = None
+            images.append((_jpeg_b64(p, 1024 if self.detail == "high" else 512), crop))
+        verdict = self._judge(images, ids, PROMPT.format(n=len(paths), day=day, subject=subject, k=k))
+        if not verdict.error and not verdict.picks and len(paths) >= 3:
+            second = self._judge(images, ids, RETRY_PROMPT.format(n=len(paths), day=day, subject=subject))
+            if not second.error and second.picks:
+                verdict = Verdict(second.picks[:1], {i: "(second look) " + second.reasons.get(i, "") for i in second.picks[:1]})
+        return verdict
+
+    def _judge(self, images, ids, prompt) -> Verdict:
         try:
             text = self._ask_openai(images, prompt) if self.provider == "openai" else self._ask_anthropic(images, prompt)
         except Exception as e:  # auth, network, rate limit after SDK retries
@@ -118,11 +168,14 @@ class Judge:
             return Verdict([], {}, error="model declined to judge this group")
         return parse_verdict(text, ids)
 
-    def _ask_openai(self, images: list[str], prompt: str) -> str:
+    def _ask_openai(self, images, prompt: str) -> str:
         content = []
-        for i, b64 in enumerate(images, 1):
+        for i, (b64, crop) in enumerate(images, 1):
             content.append({"type": "text", "text": f"Photo {i}"})
             content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": self.detail}})
+            if crop:
+                content.append({"type": "text", "text": f"Photo {i}, 100% crop of the subject"})
+                content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{crop}", "detail": "low"}})
         content.append({"type": "text", "text": prompt})
         resp = self.client.chat.completions.create(
             model=self.model,
@@ -135,11 +188,14 @@ class Judge:
             self.usage["output"] += resp.usage.completion_tokens
         return resp.choices[0].message.content or ""
 
-    def _ask_anthropic(self, images: list[str], prompt: str) -> str | None:
+    def _ask_anthropic(self, images, prompt: str) -> str | None:
         content = []
-        for i, b64 in enumerate(images, 1):
+        for i, (b64, crop) in enumerate(images, 1):
             content.append({"type": "text", "text": f"Photo {i}"})
             content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
+            if crop:
+                content.append({"type": "text", "text": f"Photo {i}, 100% crop of the subject"})
+                content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": crop}})
         content.append({"type": "text", "text": prompt})
         resp = self.client.beta.messages.create(
             model=self.model,

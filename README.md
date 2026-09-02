@@ -41,10 +41,22 @@ Then the folder is organised:
    free slots, and a bird colony labelled "seagull" in one frame and
    "cormorant" in the next cannot get in twice.
 4. **Judge (optional, `--judge`).** A vision model looks at each group's
-   shortlist (about three times the budget) and picks the keepers the way a
-   photo editor would: subject visible and sharp, faces not in shadow, best of
-   each burst, as varied as possible. Each pick gets a one-line reason in the
-   report. Providers: OpenAI (default `gpt-5.6-sol`, OpenAI's strongest
+   shortlist and picks the keepers the way a photo editor would: subject
+   visible and sharp, faces not in shadow, best of each burst, as varied as
+   possible. The shortlist (up to `--shortlist-max`, default 30) contains the
+   best frame of every burst first, then the next-best by score; only
+   pixel-identical frames are dropped, so deciding between similar moments is
+   left to the judge. Every frame goes over twice: the whole picture, and a
+   native-resolution crop of the detected subject so the judge can see whether
+   the eye is actually sharp. If the judge keeps nothing from a group, it is
+   asked once more for the single best frame. Each pick gets a one-line
+   reason in the report, and `shortlisted` shows what the judge saw. With
+   the judge on, the sharpness metric only rejects hopeless frames (absolute
+   floor); the judge decides sharpness from the crop.
+5. **Taste (optional, `--taste-dir`).** Point it at a folder of your own
+   favourite photos (e.g. the ones you chose for RAW editing). Frames whose
+   CLIP embedding resembles one of them get a score bonus, which mostly
+   changes what reaches the judge's shortlist. Providers: OpenAI (default `gpt-5.6-sol`, OpenAI's strongest
    vision model as of September 2026, key from `OPENAI_API_KEY`) or
    Anthropic (`--judge-provider anthropic`, `claude-opus-5`,
    `ANTHROPIC_API_KEY`). `--key-file path` reads the key from a `.env` or
@@ -110,7 +122,9 @@ after model load.
 | `--key-file` | | read the judge API key from a .env or YAML file |
 | `--detector` | yolov8m.pt | YOLOv8 weights (n is 3x faster, m is better on birds) |
 | `--aesthetic-weight` | 0.6 | aesthetics vs sharpness weight in the score |
-| `--blur-ratio` / `--blur-floor` | 0.3 / 20 | blur rejection thresholds (relative to day median / absolute) |
+| `--blur-ratio` / `--blur-floor` | 0.15 / 20 | blur rejection thresholds (relative to day median / absolute) |
+| `--shortlist-max` | 30 | frames per group shown to the judge (or 3x the group's budget if larger) |
+| `--taste-dir` / `--taste-weight` | off / 0.5 | folder of photos you love; frames resembling them get up to this bonus |
 | `--skip-labels` | document or screenshot | subjects never selected |
 | `--person-area` | 0.02 | min person box fraction for the people bucket (0 = no detector) |
 | `--highlights` | Highlights | name of the output subfolder |

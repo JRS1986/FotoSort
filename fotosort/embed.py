@@ -118,6 +118,7 @@ class SubjectDetector:
             h, w = r.orig_shape
             person = subject = 0.0
             edge = False
+            box = None
             for b in r.boxes:
                 cls, conf = r.names[int(b.cls)], float(b.conf)
                 if cls not in SUBJECT_CLASSES:
@@ -129,7 +130,8 @@ class SubjectDetector:
                 if frac > subject:
                     subject = frac
                     edge = x1 < 3 or y1 < 3 or x2 > w - 3 or y2 > h - 3
-            out.append({"person": float(person), "subject": float(subject), "edge": bool(edge)})
+                    box = (x1 / w, y1 / h, x2 / w, y2 / h)
+            out.append({"person": float(person), "subject": float(subject), "edge": bool(edge), "box": box})
         return out
 
 

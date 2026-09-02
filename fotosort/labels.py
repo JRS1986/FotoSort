@@ -3,8 +3,8 @@ enough for most travel photography. Override with --labels FILE (one per line)."
 
 DEFAULT_LABELS = [
     "lion", "leopard", "cheetah", "elephant", "rhinoceros", "buffalo", "giraffe",
-    "zebra", "hippopotamus", "wildebeest", "kudu antelope", "impala antelope",
-    "springbok", "warthog", "hyena", "wild dog", "jackal", "baboon", "vervet monkey",
+    "zebra", "hippopotamus", "wildebeest", "kudu antelope", "impala antelope", "eland antelope",
+    "bontebok antelope", "gemsbok oryx", "springbok", "warthog", "hyena", "wild dog", "jackal", "baboon", "vervet monkey",
     "meerkat", "mongoose", "rock hyrax (dassie)", "crocodile", "tortoise", "lizard", "snake",
     "whale", "dolphin", "shark", "seal", "penguin",
     "bird", "eagle", "vulture", "ostrich", "flamingo", "owl", "hornbill", "seagull", "cormorant",

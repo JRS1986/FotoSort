@@ -48,3 +48,18 @@ def test_pixel_signature_catches_semantically_different_duplicates():
 
 def test_empty():
     assert select_day([], {}, 0.95, 0.9) == []
+
+
+def test_shortlist_covers_every_scene_before_filling_by_score():
+    from fotosort.select import ScenedCandidate, build_shortlist
+    sig_a = _unit(np.arange(16, dtype=np.float32))
+    cands = [
+        ScenedCandidate(id="s0a", score=0.9, bucket="x", emb=_unit([1, 0]), sig=sig_a, scene=0),
+        ScenedCandidate(id="s0b", score=0.8, bucket="x", emb=_unit([1, 0]), sig=sig_a, scene=0),  # pixel twin of s0a
+        ScenedCandidate(id="s0c", score=0.7, bucket="x", emb=_unit([1, 0.1]), sig=_unit(np.random.default_rng(2).normal(size=16)), scene=0),
+        ScenedCandidate(id="s1a", score=0.1, bucket="x", emb=_unit([1, 0.05]), sig=_unit(np.random.default_rng(3).normal(size=16)), scene=1),
+        ScenedCandidate(id="s2a", score=-0.9, bucket="x", emb=_unit([0, 1]), sig=_unit(np.random.default_rng(4).normal(size=16)), scene=2),
+    ]
+    # scene coverage first (s0a, s1a, s2a), then fill (s0c); pixel twin s0b never
+    assert build_shortlist(cands, cap=4) == ["s0a", "s1a", "s2a", "s0c"]
+    assert build_shortlist(cands, cap=2) == ["s0a", "s1a"]
