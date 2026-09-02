@@ -70,8 +70,13 @@ def test_tournament_chunks_see_every_frame_once_and_balance_sizes():
     rng = np.random.default_rng(5)
     cands = [ScenedCandidate(id=f"f{i}", score=rng.normal(), bucket="x", emb=_unit([1, 0]),
                              sig=_unit(rng.normal(size=16)), scene=i // 7) for i in range(50)]
-    chunks = chunk_for_tournament(cands, chunk=24)
+    chunks, twins = chunk_for_tournament(cands, chunk=24)
     flat = [i for ch in chunks for i in ch]
-    assert sorted(flat) == sorted(c.id for c in cands)      # everything shown exactly once
+    assert sorted(flat) == sorted(c.id for c in cands) and twins == {}   # everything shown exactly once
     assert len(chunks) == 3 and max(map(len, chunks)) - min(map(len, chunks)) <= 1
-    assert chunk_for_tournament([], 24) == []
+    assert chunk_for_tournament([], 24) == ([], {})
+    # a pixel twin is folded onto its better-scoring sibling and reported as such
+    cands[1].sig = cands[0].sig
+    lo, hi = sorted([cands[0], cands[1]], key=lambda c: c.score)
+    chunks, twins = chunk_for_tournament(cands, chunk=24)
+    assert twins == {lo.id: hi.id} and lo.id not in [i for ch in chunks for i in ch]

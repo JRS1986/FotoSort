@@ -333,7 +333,9 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                 group = [p for p in day_buckets[label] if not p.reject]
                 sc = [ScenedCandidate(str(p.path), p.score, p.label, p.emb, p.sig, p.scene) for p in group]
                 if args.judge_coverage == "full":
-                    rounds = chunk_for_tournament(sc, args.judge_chunk)
+                    rounds, twins = chunk_for_tournament(sc, args.judge_chunk)
+                    for dropped, kept_id in twins.items():
+                        by_path[dropped].judge_reason = f"= twin of {Path(kept_id).name}"
                 else:
                     rounds = [build_shortlist(sc, max(args.shortlist_max, 3 * k))]
                 rounds = [r for r in rounds if r]

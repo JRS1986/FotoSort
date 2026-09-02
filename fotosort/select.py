@@ -83,20 +83,26 @@ def build_shortlist(cands: list[ScenedCandidate], cap: int, pixel_dup: float = 0
     return [c.id for c in out[:cap]]
 
 
-def chunk_for_tournament(cands: list[ScenedCandidate], chunk: int = 24, pixel_dup: float = 0.97) -> list[list[str]]:
-    """Split one bucket into judge-sized chunks so every frame is seen.
-    Pixel-identical frames are dropped first (best kept); the rest are ordered
-    by scene, then by score, and cut into chunks of at most `chunk` frames.
-    Sizes are balanced so the last chunk is not a stub."""
+def chunk_for_tournament(cands: list[ScenedCandidate], chunk: int = 24,
+                         pixel_dup: float = 0.97) -> tuple[list[list[str]], dict[str, str]]:
+    """Split one bucket into judge-sized chunks so every distinct frame is seen.
+    Pixel-identical frames are folded onto their best-scoring twin first; the
+    rest are ordered by scene, then by score, and cut into chunks of at most
+    `chunk` frames, balanced so the last chunk is not a stub.
+    Returns (chunks of ids, {dropped id: id of the twin that stands for it})."""
     ranked = sorted(cands, key=lambda c: c.score, reverse=True)
     kept: list[ScenedCandidate] = []
+    twins: dict[str, str] = {}
     for c in ranked:
-        if any(c.sig is not None and p.sig is not None and float(np.dot(c.sig, p.sig)) >= pixel_dup for p in kept):
+        twin = next((p for p in kept if c.sig is not None and p.sig is not None
+                     and float(np.dot(c.sig, p.sig)) >= pixel_dup), None)
+        if twin is not None:
+            twins[c.id] = twin.id
             continue
         kept.append(c)
     kept.sort(key=lambda c: (c.scene, -c.score))
     if not kept:
-        return []
+        return [], twins
     n_chunks = max(1, -(-len(kept) // chunk))
     size = -(-len(kept) // n_chunks)
-    return [[c.id for c in kept[i:i + size]] for i in range(0, len(kept), size)]
+    return [[c.id for c in kept[i:i + size]] for i in range(0, len(kept), size)], twins
