@@ -95,15 +95,16 @@ after model load.
 | `--report` | fotosort_report.csv | CSV report path, relative to the photo folder |
 | `--no-cache` | | ignore and do not write the feature cache |
 | `--limit N` | | only process the first N files (for testing) |
-| `--enhance` | | write enhanced copies of the picks into `Highlights/Enhanced/` |
+| `--enhance` | | enhance the picks: with `--copy` the enhanced version is the copy, with `--move` it goes to `Highlights/Enhanced/` |
 | `--enhance-strength` | 1.0 | 0 = untouched, 1.5 = punchy |
 | `--enhance-style` | auto | force one style for all picks |
 
 ### Enhancing the picks
 
 ```bash
-./fotosort.sh /path --move --enhance                  # picks in Highlights/, edited copies in Highlights/Enhanced/
-./fotosort.sh /path --move --enhance --enhance-strength 1.3
+./fotosort.sh /path --copy --enhance                  # enhanced copies of the picks in Highlights/, originals untouched
+./fotosort.sh /path --move --enhance                  # originals moved to Highlights/, enhanced versions in Highlights/Enhanced/
+./fotosort.sh /path --copy --enhance --enhance-strength 1.3
 ./fotosort.sh enhance /any/folder                     # enhance any folder into <folder>/Enhanced
 ./fotosort.sh enhance IMG_0042.jpg --style landscape --strength 0.8
 ```

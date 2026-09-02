@@ -77,7 +77,9 @@ def parse_args(argv=None):
     p.add_argument("--skip-labels", default="document or screenshot", help="Comma-separated labels never selected")
     p.add_argument("--with-sidecars", action="store_true", help="Also move RAW/XMP files with the same name")
     p.add_argument("--enhance", action="store_true",
-                   help="Also write style-aware enhanced versions of the picks into Highlights/Enhanced")
+                   help="Write style-aware enhanced versions of the picks. With --copy only the enhanced "
+                        "version goes into the output folder (originals stay where they are); with --move "
+                        "the original is moved there and the enhanced version goes into an Enhanced/ subfolder")
     p.add_argument("--enhance-strength", type=float, default=1.0, help="0 = untouched, 1 = default, 1.5 = punchy")
     p.add_argument("--enhance-style", help="Force one enhancement style for all picks instead of detecting it")
     p.add_argument("--report", default="fotosort_report.csv", help="CSV report path (relative to folder)")
@@ -331,42 +333,52 @@ def main(argv=None) -> int:
         for ph in picks:
             print(f"  {ph.path.relative_to(root)}  [{ph.day} {ph.label}, score {ph.score:+.2f}]")
         if args.enhance:
-            print(f"Enhanced versions would be written to {out_dir / 'Enhanced'}")
+            where = out_dir if args.copy else out_dir / "Enhanced"
+            print(f"Enhanced versions would be written to {where}")
         return 0
 
     out_dir.mkdir(exist_ok=True)
+    enhanced_only = args.enhance and args.copy  # copy mode: the enhanced version IS the copy
     op = shutil.copy2 if args.copy else shutil.move
     moved = 0
     new_paths: dict[str, Path] = {}
     for ph in picks:
-        targets = [ph.path] + (sidecars(ph.path) if args.with_sidecars else [])
+        targets = sidecars(ph.path) if args.with_sidecars else []
+        if not enhanced_only:
+            targets = [ph.path] + targets
         for src in targets:
             dest = unique_dest(out_dir, src, root)
             op(str(src), str(dest))
             moved += 1
             if src == ph.path:
                 new_paths[str(ph.path)] = dest
-    print(f"{'Copied' if args.copy else 'Moved'} {moved} files into {out_dir}")
+    if moved:
+        print(f"{'Copied' if args.copy else 'Moved'} {moved} files into {out_dir}")
 
-    if args.enhance:
-        enhance_picks(picks, new_paths, out_dir / "Enhanced", emb, args)
+    if enhanced_only:
+        sources = {str(ph.path): ph.path for ph in picks}
+        enhance_picks(picks, sources, out_dir, emb, args, namer=lambda src: unique_dest(out_dir, src, root))
+    elif args.enhance:
+        enh_dir = out_dir / "Enhanced"
+        enhance_picks(picks, new_paths, enh_dir, emb, args, namer=lambda src: enh_dir / src.name)
     return 0
 
 
-def enhance_picks(picks: list[Photo], new_paths: dict[str, Path], enh_dir: Path, emb, args) -> None:
+def enhance_picks(picks: list[Photo], sources: dict[str, Path], enh_dir: Path, emb, args, namer) -> None:
+    """Enhance each pick from `sources[original path]` into `namer(src)`."""
     from fotosort.enhance import STYLE_PROMPTS, detect_style, enhance_file, image_stats
 
     style_emb = None if args.enhance_style else emb.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
     enh_dir.mkdir(parents=True, exist_ok=True)
     styles = defaultdict(int)
     for ph in tqdm(picks, unit="img", desc="Enhancing"):
-        src = new_paths[str(ph.path)]
+        src = sources[str(ph.path)]
         if args.enhance_style:
             style = args.enhance_style
         else:
             stats = image_stats(np.asarray(load_small(str(src), 512), dtype=np.float32))
             style = detect_style(ph.emb, style_emb, stats)
         styles[style] += 1
-        enhance_file(src, enh_dir / src.name, style, args.enhance_strength)
+        enhance_file(src, namer(src), style, args.enhance_strength)
     summary = ", ".join(f"{n} {s}" for s, n in sorted(styles.items(), key=lambda kv: -kv[1]))
     print(f"Enhanced {len(picks)} picks into {enh_dir} ({summary})")
