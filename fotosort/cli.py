@@ -30,6 +30,7 @@ class Photo:
     time: Optional[datetime] = None
     emb: Optional[np.ndarray] = None
     sig: Optional[np.ndarray] = None
+    person: float = 0.0  # largest detected person box, fraction of frame
     sharpness: float = 0.0
     clip_low: float = 0.0
     clip_high: float = 0.0
@@ -70,6 +71,9 @@ def parse_args(argv=None):
     p.add_argument("--blur-ratio", type=float, default=0.3, help="Reject if sharpness < ratio * day median")
     p.add_argument("--blur-floor", type=float, default=20.0, help="Reject if sharpness below this absolute value")
     p.add_argument("--labels", help="Text file with one subject label per line (overrides defaults)")
+    p.add_argument("--person-area", type=float, default=0.02,
+                   help="A detected person covering at least this fraction of the frame puts the photo in the "
+                        "'people' bucket (0 = disable the detector)")
     p.add_argument("--skip-labels", default="document or screenshot", help="Comma-separated labels never selected")
     p.add_argument("--with-sidecars", action="store_true", help="Also move RAW/XMP files with the same name")
     p.add_argument("--enhance", action="store_true",
@@ -85,15 +89,17 @@ def parse_args(argv=None):
 
 
 def _decode(photo: Photo, prepare):
-    """Returns (photo, sharpness, exposure, tensor) or (photo, None, error, None)."""
+    """Returns (photo, sharpness, exposure, tensor, small image) or (photo, None, error, None, None)."""
     try:
         img = load_small(str(photo.path))
         gray = to_gray(img)
         ex = exposure(gray)
         photo.sig = signature(img)
-        return photo, sharpness(gray), ex, prepare(img)
+        small = img.copy()
+        small.thumbnail((640, 640))
+        return photo, sharpness(gray), ex, prepare(img), small
     except Exception as e:  # missing, truncated or non-JPEG file: skip, do not abort the run
-        return photo, None, e, None
+        return photo, None, e, None, None
 
 
 def compute_features(photos: list[Photo], root: Path, args):
@@ -103,7 +109,7 @@ def compute_features(photos: list[Photo], root: Path, args):
     for ph in photos:
         c = cached.get(ph.key)
         if c is not None:
-            ph.emb, ph.sig, ph.sharpness = c["emb"], c["sig"], c["sharpness"]
+            ph.emb, ph.sig, ph.person, ph.sharpness = c["emb"], c["sig"], c["person"], c["sharpness"]
             ph.clip_low, ph.clip_high, ph.mean = c["clip_low"], c["clip_high"], c["mean"]
         else:
             todo.append(ph)
@@ -116,10 +122,23 @@ def compute_features(photos: list[Photo], root: Path, args):
     print(f"Running on {emb.device}")
 
     if todo:
+        detector = None
+        if args.person_area > 0:
+            from fotosort.embed import PersonDetector
+
+            detector = PersonDetector(device=emb.device)
+
+        def flush(batch, tensors, smalls):
+            for p_, e_ in zip(batch, emb.embed_batch(tensors)):
+                p_.emb = e_
+            if detector is not None:
+                for p_, f_ in zip(batch, detector.person_fraction(smalls)):
+                    p_.person = f_
+
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            batch, tensors = [], []
+            batch, tensors, smalls = [], [], []
             futures = pool.map(lambda ph: _decode(ph, emb.prepare), todo)
-            for ph, sh, ex, tensor in tqdm(futures, total=len(todo), unit="img", desc="Analysing"):
+            for ph, sh, ex, tensor, small in tqdm(futures, total=len(todo), unit="img", desc="Analysing"):
                 if sh is None:
                     tqdm.write(f"Skipping {ph.path.name}: {ex}")
                     ph.reject = "unreadable"
@@ -127,19 +146,19 @@ def compute_features(photos: list[Photo], root: Path, args):
                 ph.sharpness, ph.clip_low, ph.clip_high, ph.mean = sh, ex["clip_low"], ex["clip_high"], ex["mean"]
                 batch.append(ph)
                 tensors.append(tensor)
+                smalls.append(small)
                 if len(batch) >= args.batch_size:
-                    for p_, e_ in zip(batch, emb.embed_batch(tensors)):
-                        p_.emb = e_
-                    batch, tensors = [], []
+                    flush(batch, tensors, smalls)
+                    batch, tensors, smalls = [], [], []
             if batch:
-                for p_, e_ in zip(batch, emb.embed_batch(tensors)):
-                    p_.emb = e_
+                flush(batch, tensors, smalls)
         if not args.no_cache:
             for ph in todo:
                 if ph.emb is None:
                     continue
                 cached[ph.key] = {
-                    "emb": ph.emb, "sig": ph.sig, "sharpness": ph.sharpness, "clip_low": ph.clip_low,
+                    "emb": ph.emb, "sig": ph.sig, "person": ph.person, "sharpness": ph.sharpness,
+                    "clip_low": ph.clip_low,
                     "clip_high": ph.clip_high, "mean": ph.mean,
                 }
             cache_mod.save(root, cached)
@@ -203,6 +222,16 @@ def assign_scenes_and_labels(photos: list[Photo], text_emb: np.ndarray, labels: 
     for s, n, pr in zip(scene_ids, names, probs):
         for p in scenes[s]:
             p.label, p.label_prob = bucket_name(n), float(pr)
+    apply_person_override(photos, args.person_area)
+
+
+def apply_person_override(photos: list[Photo], min_area: float) -> None:
+    """A clearly visible person beats whatever CLIP thought the scene was."""
+    if min_area <= 0:
+        return
+    for p in photos:
+        if p.person >= min_area:
+            p.label, p.label_prob = "people", max(p.label_prob, p.person)
 
 
 def pick_budget(n_photos: int, base: int, extra_per: int) -> int:
@@ -227,7 +256,7 @@ def select_photos(photos: list[Photo], args) -> dict[tuple[str, str], list[Photo
 
 
 def write_report(photos: list[Photo], path: Path) -> None:
-    cols = ["file", "datetime", "day", "label", "label_prob", "scene", "sharpness", "clip_low",
+    cols = ["file", "datetime", "day", "label", "label_prob", "person", "scene", "sharpness", "clip_low",
             "clip_high", "aesthetic", "score", "reject", "selected"]
     with open(path, "w", newline="") as f:
         wr = csv.writer(f)
@@ -235,7 +264,7 @@ def write_report(photos: list[Photo], path: Path) -> None:
         for ph in sorted(photos, key=lambda p: (p.day, p.label, -p.score)):
             wr.writerow([
                 str(ph.path), ph.time.isoformat() if ph.time else "", ph.day, ph.label,
-                f"{ph.label_prob:.2f}", ph.scene, f"{ph.sharpness:.1f}", f"{ph.clip_low:.3f}",
+                f"{ph.label_prob:.2f}", f"{ph.person:.3f}", ph.scene, f"{ph.sharpness:.1f}", f"{ph.clip_low:.3f}",
                 f"{ph.clip_high:.3f}", f"{ph.aesthetic:.2f}", f"{ph.score:.3f}", ph.reject, int(ph.selected),
             ])
 

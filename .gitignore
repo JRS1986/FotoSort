@@ -20,3 +20,4 @@ Highlights/
 Enhanced/
 .fotosort_cache.npz
 fotosort_report.csv
+*.pt

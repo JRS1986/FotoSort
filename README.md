@@ -19,7 +19,8 @@ Every JPEG gets four signals:
 | **Sharpness** | Variance of the Laplacian, max over a 4x4 tile grid. Taking the max rewards a sharp subject on a soft background. Computed on a fast reduced-size decode. |
 | **Exposure** | Fraction of clipped black and white pixels. |
 | **Aesthetics** | CLIP ViT-L/14 embedding + the [LAION aesthetic predictor](https://github.com/christophschuhmann/improved-aesthetic-predictor) (score 1..10). Runs on the Apple GPU via MPS, CUDA, or CPU. |
-| **Subject** | Zero-shot CLIP label from a list of ~60 subjects (lion, elephant, bird, landscape, sunset, people, ...). |
+| **Subject** | Zero-shot CLIP label from a list of ~70 subjects (lion, elephant, bird, landscape, sunset, ...). |
+| **People** | YOLOv8-nano person detector. A person covering at least 2 % of the frame puts the photo in the "people" bucket, because CLIP alone happily files a child in a field under "kudu antelope". |
 
 Then the folder is organised:
 
@@ -60,8 +61,8 @@ python3.11 -m venv .venv
 .venv/bin/python -m fotosort /path/to/photos
 ```
 
-The first run downloads the CLIP weights (~900 MB, Hugging Face cache) and the
-aesthetic head (~4 MB, `~/.cache/fotosort`). Per-image features are cached in
+The first run downloads the CLIP weights (~900 MB, Hugging Face cache), the
+aesthetic head (~4 MB) and the YOLOv8n detector (~6 MB), both into `~/.cache/fotosort`. Per-image features are cached in
 `.fotosort_cache.npz` inside the photo folder, so re-running with different
 thresholds takes seconds. Throughput on an Apple M4 is roughly 10-20 images/s
 after model load.
@@ -89,6 +90,7 @@ after model load.
 | `--aesthetic-weight` | 0.6 | aesthetics vs sharpness weight in the score |
 | `--blur-ratio` / `--blur-floor` | 0.3 / 20 | blur rejection thresholds (relative to day median / absolute) |
 | `--skip-labels` | document or screenshot | subjects never selected |
+| `--person-area` | 0.02 | min person box fraction for the people bucket (0 = no detector) |
 | `--highlights` | Highlights | name of the output subfolder |
 | `--report` | fotosort_report.csv | CSV report path, relative to the photo folder |
 | `--no-cache` | | ignore and do not write the feature cache |

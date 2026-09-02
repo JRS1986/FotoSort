@@ -4,3 +4,4 @@ pillow>=10.0
 numpy>=1.26
 tqdm>=4.66
 pytest>=8.0
+ultralytics>=8.3

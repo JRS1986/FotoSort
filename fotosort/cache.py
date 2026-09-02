@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 CACHE_NAME = ".fotosort_cache.npz"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 
 def cache_key(path: Path, root: Path) -> str:
@@ -27,6 +27,7 @@ def load(root: Path) -> dict[str, dict]:
             str(k): {
                 "emb": z["emb"][i],
                 "sig": z["sig"][i],
+                "person": float(z["person"][i]),
                 "sharpness": float(z["sharpness"][i]),
                 "clip_low": float(z["clip_low"][i]),
                 "clip_high": float(z["clip_high"][i]),
@@ -47,6 +48,7 @@ def save(root: Path, entries: dict[str, dict]) -> None:
         version=np.array(CACHE_VERSION),
         keys=np.array(keys),
         sig=np.stack([entries[k]["sig"] for k in keys]).astype(np.float32),
+        person=np.array([entries[k]["person"] for k in keys], dtype=np.float32),
         emb=np.stack([entries[k]["emb"] for k in keys]).astype(np.float32),
         sharpness=np.array([entries[k]["sharpness"] for k in keys], dtype=np.float32),
         clip_low=np.array([entries[k]["clip_low"] for k in keys], dtype=np.float32),

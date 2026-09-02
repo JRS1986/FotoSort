@@ -14,6 +14,7 @@ AESTHETIC_URL = (
     "sac+logos+ava1-l14-linearMSE.pth"
 )
 CACHE_DIR = Path(os.environ.get("FOTOSORT_CACHE", Path.home() / ".cache" / "fotosort"))
+os.environ.setdefault("YOLO_CONFIG_DIR", str(CACHE_DIR / "ultralytics"))
 
 
 def pick_device() -> str:
@@ -86,6 +87,35 @@ class Embedder:
         t = self.model.encode_text(tokens).float()
         t = t / t.norm(dim=-1, keepdim=True)
         return t.cpu().numpy().astype(np.float32)
+
+
+class PersonDetector:
+    """YOLOv8-nano person detector. CLIP zero-shot is unreliable at telling a
+    person in a safari scene from the animals around them; a detector is not."""
+
+    def __init__(self, device: str | None = None, conf: float = 0.5):
+        from ultralytics import YOLO  # slow import, keep local
+
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.model = YOLO(str(CACHE_DIR / "yolov8n.pt"))
+        self.device = device or pick_device()
+        self.conf = conf
+
+    def person_fraction(self, images: list[Image.Image]) -> list[float]:
+        """Largest person box as a fraction of the frame, per image (0 = none)."""
+        if not images:
+            return []
+        results = self.model.predict(images, imgsz=640, conf=self.conf, verbose=False, device=self.device)
+        out = []
+        for r in results:
+            h, w = r.orig_shape
+            best = 0.0
+            for b in r.boxes:
+                if r.names[int(b.cls)] == "person":
+                    x1, y1, x2, y2 = b.xyxy[0].tolist()
+                    best = max(best, (x2 - x1) * (y2 - y1) / (w * h))
+            out.append(float(best))
+        return out
 
 
 def classify(emb: np.ndarray, text_emb: np.ndarray, labels: list[str]) -> tuple[list[str], np.ndarray]:
