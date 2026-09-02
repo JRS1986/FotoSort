@@ -11,16 +11,18 @@ class Candidate:
     id: str
     score: float
     scene: int
-    emb: np.ndarray  # L2-normalised
+    emb: np.ndarray  # L2-normalised CLIP embedding
+    sig: np.ndarray | None = None  # zero-mean unit-norm thumbnail (see quality.signature)
 
 
-def select_bucket(cands: list[Candidate], k_max: int, k_min: int, dup_thresh: float) -> list[str]:
+def select_bucket(cands: list[Candidate], k_max: int, dup_thresh: float, dup_pixel: float = 0.93) -> list[str]:
     """Greedy diverse selection.
 
     1. Take the best shot of every scene, strongest scenes first.
     2. Fill up to `k_max` with the next-best shots that are not near-duplicates
-       (cosine similarity >= `dup_thresh`) of anything already picked.
-    3. If fewer than `k_min` were chosen, top up by score ignoring duplicates.
+       of anything already picked. Two frames are near-duplicates when their
+       CLIP cosine similarity >= `dup_thresh` or their thumbnail correlation
+       >= `dup_pixel`. A bucket with only duplicate frames yields one pick.
     """
     if not cands or k_max <= 0:
         return []
@@ -29,7 +31,12 @@ def select_bucket(cands: list[Candidate], k_max: int, k_min: int, dup_thresh: fl
     seen_scenes: set[int] = set()
 
     def is_dup(c: Candidate) -> bool:
-        return any(float(np.dot(c.emb, p.emb)) >= dup_thresh for p in picked)
+        for p in picked:
+            if float(np.dot(c.emb, p.emb)) >= dup_thresh:
+                return True
+            if c.sig is not None and p.sig is not None and float(np.dot(c.sig, p.sig)) >= dup_pixel:
+                return True
+        return False
 
     for c in ranked:  # pass 1: best of each scene
         if len(picked) >= k_max:
@@ -41,10 +48,5 @@ def select_bucket(cands: list[Candidate], k_max: int, k_min: int, dup_thresh: fl
         if len(picked) >= k_max:
             break
         if c not in picked and not is_dup(c):
-            picked.append(c)
-    for c in ranked:  # pass 3: guarantee k_min
-        if len(picked) >= min(k_min, k_max):
-            break
-        if c not in picked:
             picked.append(c)
     return [c.id for c in picked]

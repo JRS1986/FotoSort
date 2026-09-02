@@ -46,6 +46,19 @@ def sharpness(gray: np.ndarray, grid: int = 4) -> float:
     return best
 
 
+SIG_SIDE = 24
+
+
+def signature(img: Image.Image, side: int = SIG_SIDE) -> np.ndarray:
+    """Tiny zero-mean, unit-norm grayscale thumbnail. The dot product of two
+    signatures is a normalised cross-correlation: ~1.0 for the same framing,
+    well below 0.9 for a different composition. Used for near-duplicate
+    detection, where CLIP similarity is too semantic to tell frames apart."""
+    a = np.asarray(img.convert("L").resize((side, side), Image.Resampling.BILINEAR), dtype=np.float32).ravel()
+    a -= a.mean()
+    return a / (np.linalg.norm(a) + 1e-6)
+
+
 def exposure(gray: np.ndarray) -> dict:
     """Fraction of pixels clipped at the black and white ends, plus the mean."""
     n = gray.size

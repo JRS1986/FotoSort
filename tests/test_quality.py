@@ -33,3 +33,12 @@ def test_exposure_detects_clipping():
     assert exposure(bright)["clip_high"] > 0.9
     e = exposure(mid)
     assert e["clip_low"] < 0.01 and e["clip_high"] < 0.01
+
+
+def test_signature_correlation_separates_same_from_different_framing():
+    from fotosort.quality import signature
+    a = _checker(256, 32)
+    same = a.rotate(1, resample=Image.BILINEAR)
+    other = Image.fromarray(np.random.default_rng(0).integers(0, 255, (256, 256), dtype=np.uint8)).convert("RGB")
+    assert float(signature(a) @ signature(same)) > 0.93
+    assert float(signature(a) @ signature(other)) < 0.5

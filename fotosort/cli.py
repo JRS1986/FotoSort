@@ -17,8 +17,8 @@ from tqdm import tqdm
 
 from fotosort import cache as cache_mod
 from fotosort.group import cluster_scenes
-from fotosort.labels import load_labels
-from fotosort.quality import exposure, load_small, sharpness, to_gray
+from fotosort.labels import bucket_name, load_labels
+from fotosort.quality import exposure, load_small, sharpness, signature, to_gray
 from fotosort.scan import capture_time, find_jpegs, sidecars
 from fotosort.select import Candidate, select_bucket
 
@@ -29,6 +29,7 @@ class Photo:
     key: str
     time: Optional[datetime] = None
     emb: Optional[np.ndarray] = None
+    sig: Optional[np.ndarray] = None
     sharpness: float = 0.0
     clip_low: float = 0.0
     clip_high: float = 0.0
@@ -58,11 +59,13 @@ def parse_args(argv=None):
     g.add_argument("--copy", action="store_true", help="Copy picks into Highlights instead of moving")
     p.add_argument("--highlights", default="Highlights", help="Name of the output subfolder")
     p.add_argument("--recursive", action="store_true", help="Also scan subfolders")
-    p.add_argument("--max-per-group", type=int, default=5, help="Max picks per subject per day")
-    p.add_argument("--min-per-group", type=int, default=2, help="Min picks per subject per day (if available)")
+    p.add_argument("--max-per-group", type=int, default=5, help="Base number of picks per subject per day")
+    p.add_argument("--extra-per", type=int, default=40,
+                   help="One extra pick per this many photos in a group (0 = off); total capped at 3x --max-per-group")
     p.add_argument("--gap-seconds", type=float, default=120, help="Time gap that starts a new scene/burst")
     p.add_argument("--scene-sim", type=float, default=0.80, help="Min similarity to stay in the same scene")
-    p.add_argument("--dup-sim", type=float, default=0.95, help="Similarity above which two picks are near-duplicates")
+    p.add_argument("--dup-sim", type=float, default=0.985, help="CLIP similarity above which two picks are near-duplicates")
+    p.add_argument("--dup-pixel", type=float, default=0.93, help="Thumbnail correlation above which two picks are near-duplicates")
     p.add_argument("--aesthetic-weight", type=float, default=0.6, help="Weight of aesthetics vs sharpness (0..1)")
     p.add_argument("--blur-ratio", type=float, default=0.3, help="Reject if sharpness < ratio * day median")
     p.add_argument("--blur-floor", type=float, default=20.0, help="Reject if sharpness below this absolute value")
@@ -87,6 +90,7 @@ def _decode(photo: Photo, prepare):
         img = load_small(str(photo.path))
         gray = to_gray(img)
         ex = exposure(gray)
+        photo.sig = signature(img)
         return photo, sharpness(gray), ex, prepare(img)
     except Exception as e:  # missing, truncated or non-JPEG file: skip, do not abort the run
         return photo, None, e, None
@@ -99,7 +103,7 @@ def compute_features(photos: list[Photo], root: Path, args):
     for ph in photos:
         c = cached.get(ph.key)
         if c is not None:
-            ph.emb, ph.sharpness = c["emb"], c["sharpness"]
+            ph.emb, ph.sig, ph.sharpness = c["emb"], c["sig"], c["sharpness"]
             ph.clip_low, ph.clip_high, ph.mean = c["clip_low"], c["clip_high"], c["mean"]
         else:
             todo.append(ph)
@@ -135,7 +139,7 @@ def compute_features(photos: list[Photo], root: Path, args):
                 if ph.emb is None:
                     continue
                 cached[ph.key] = {
-                    "emb": ph.emb, "sharpness": ph.sharpness, "clip_low": ph.clip_low,
+                    "emb": ph.emb, "sig": ph.sig, "sharpness": ph.sharpness, "clip_low": ph.clip_low,
                     "clip_high": ph.clip_high, "mean": ph.mean,
                 }
             cache_mod.save(root, cached)
@@ -198,7 +202,14 @@ def assign_scenes_and_labels(photos: list[Photo], text_emb: np.ndarray, labels: 
     names, probs = classify(means, text_emb, labels)
     for s, n, pr in zip(scene_ids, names, probs):
         for p in scenes[s]:
-            p.label, p.label_prob = n, float(pr)
+            p.label, p.label_prob = bucket_name(n), float(pr)
+
+
+def pick_budget(n_photos: int, base: int, extra_per: int) -> int:
+    """Base picks plus one per `extra_per` photos, capped at 3x base: a 450-frame
+    afternoon of the same subject deserves more keepers than a 6-frame one."""
+    extra = n_photos // extra_per if extra_per > 0 else 0
+    return min(base + extra, 3 * base)
 
 
 def select_photos(photos: list[Photo], args) -> dict[tuple[str, str], list[Photo]]:
@@ -207,8 +218,9 @@ def select_photos(photos: list[Photo], args) -> dict[tuple[str, str], list[Photo
         buckets[(ph.day, ph.label)].append(ph)
     for key, group in buckets.items():
         group.sort(key=lambda p: (p.scene, p.path.name))
-        cands = [Candidate(str(p.path), p.score, p.scene, p.emb) for p in group if not p.reject]
-        chosen = set(select_bucket(cands, args.max_per_group, args.min_per_group, args.dup_sim))
+        cands = [Candidate(str(p.path), p.score, p.scene, p.emb, p.sig) for p in group if not p.reject]
+        k = pick_budget(len(cands), args.max_per_group, args.extra_per)
+        chosen = set(select_bucket(cands, k, args.dup_sim, args.dup_pixel))
         for p in group:
             p.selected = str(p.path) in chosen
     return dict(sorted(buckets.items()))

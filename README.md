@@ -28,10 +28,14 @@ Then the folder is organised:
    mean embedding, so a whole burst lands in the same subject bucket even if
    single frames are ambiguous.
 2. **Buckets.** Photos are grouped by *(day, subject)*, e.g. "2026-09-01 /
-   elephant".
+   elephant". All people labels (child, man, woman, group, selfie, ...) share
+   one "people" bucket.
 3. **Selection.** In each bucket the tool first takes the best frame of every
-   scene, then fills up to `--max-per-group` (default 5) with further frames
-   that are not near-duplicates of an existing pick. Blurry frames (below 30 %
+   scene, then fills the pick budget (`--max-per-group`, default 5, plus one
+   per `--extra-per` photos in the group, capped at 3x) with further frames
+   that are not near-duplicates of an existing pick. Duplicates are detected
+   two ways: CLIP similarity (same content) and a tiny normalised thumbnail
+   correlation (same framing). A bucket of identical frames yields one pick. Blurry frames (below 30 %
    of the day's median sharpness) and badly clipped frames are never picked.
 
 The combined score is a weighted z-score of aesthetics and log-sharpness minus
@@ -69,17 +73,19 @@ after model load.
 ./fotosort.sh /path --move                       # move picks into /path/Highlights
 ./fotosort.sh /path --copy                       # copy instead of move
 ./fotosort.sh /path --recursive --with-sidecars  # include subfolders, bring RAW/XMP files along
-./fotosort.sh /path --max-per-group 3 --min-per-group 1
+./fotosort.sh /path --max-per-group 3
 ./fotosort.sh /path --labels my_labels.txt       # own subject list, one label per line
 ./fotosort.sh /path --blur-ratio 0               # keep soft bursts (e.g. the only leopard of the trip)
 ```
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--max-per-group` / `--min-per-group` | 5 / 2 | picks per subject per day |
+| `--max-per-group` | 5 | base picks per subject per day |
+| `--extra-per` | 40 | one extra pick per this many photos in a group, capped at 3x base (0 = off) |
 | `--gap-seconds` | 120 | time gap that starts a new scene |
 | `--scene-sim` | 0.80 | min cosine similarity to stay in a scene |
-| `--dup-sim` | 0.95 | similarity above which two picks count as duplicates |
+| `--dup-sim` | 0.985 | CLIP similarity above which two picks count as duplicates |
+| `--dup-pixel` | 0.93 | thumbnail correlation above which two picks count as duplicates |
 | `--aesthetic-weight` | 0.6 | aesthetics vs sharpness weight in the score |
 | `--blur-ratio` / `--blur-floor` | 0.3 / 20 | blur rejection thresholds (relative to day median / absolute) |
 | `--skip-labels` | document or screenshot | subjects never selected |
