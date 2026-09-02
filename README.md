@@ -20,7 +20,7 @@ Every JPEG gets four signals:
 | **Exposure** | Fraction of clipped black and white pixels. |
 | **Aesthetics** | CLIP ViT-L/14 embedding + the [LAION aesthetic predictor](https://github.com/christophschuhmann/improved-aesthetic-predictor) (score 1..10). Runs on the Apple GPU via MPS, CUDA, or CPU. |
 | **Subject** | Zero-shot CLIP label from a list of ~70 subjects (lion, elephant, bird, landscape, sunset, ...). |
-| **People** | YOLOv8-nano person detector. A person covering at least 2 % of the frame puts the photo in the "people" bucket, because CLIP alone happily files a child in a field under "kudu antelope". |
+| **Subject** | YOLOv8 detector for people and animals: how big the main subject is and whether it is cut off by the frame. A large subject earns a bonus, a small one touching the border a penalty. A person covering at least 2 % of the frame puts the photo in the "people" bucket (CLIP alone files a child in a field under "kudu antelope") and gets the portrait enhancement. |
 
 Then the folder is organised:
 
@@ -31,12 +31,24 @@ Then the folder is organised:
 2. **Buckets.** Photos are grouped by *(day, subject)*, e.g. "2026-09-01 /
    elephant". All people labels (child, man, woman, group, selfie, ...) share
    one "people" bucket.
-3. **Selection.** In each bucket the tool first takes the best frame of every
-   scene, then fills the pick budget (`--max-per-group`, default 5, plus one
-   per `--extra-per` photos in the group, capped at 3x) with further frames
-   that are not near-duplicates of an existing pick. Duplicates are detected
-   two ways: CLIP similarity (same content) and a tiny normalised thumbnail
-   correlation (same framing). A bucket of identical frames yields one pick. Blurry frames (below 30 %
+3. **Selection.** Per day, candidates are visited best-first. One is taken if
+   its score is above `--min-score`, its group still has budget
+   (`--max-per-group`, default 5, plus one per `--extra-per` photos, capped at
+   3x), and it is not a near-duplicate of anything already taken that day, in
+   any group. Duplicates are detected two ways: CLIP similarity (same content,
+   `--dup-sim`) and a tiny normalised thumbnail correlation (same framing,
+   `--dup-pixel`). So a weak photo never gets in just because its subject has
+   free slots, and a bird colony labelled "seagull" in one frame and
+   "cormorant" in the next cannot get in twice.
+4. **Judge (optional, `--judge`).** A vision model looks at each group's
+   shortlist (about three times the budget) and picks the keepers the way a
+   photo editor would: subject visible and sharp, faces not in shadow, best of
+   each burst, as varied as possible. Each pick gets a one-line reason in the
+   report. Providers: OpenAI (default, `gpt-5.4`, key from `OPENAI_API_KEY`)
+   or Anthropic (`--judge-provider anthropic`, `claude-opus-5`,
+   `ANTHROPIC_API_KEY`). `--key-file path` reads the key from a `.env` or
+   YAML file instead. Images are sent at low detail, so a 2,000-photo folder
+   costs well under a dollar. Blurry frames (below 30 %
    of the day's median sharpness) and badly clipped frames are never picked.
 
 The combined score is a weighted z-score of aesthetics and log-sharpness minus
@@ -77,6 +89,7 @@ after model load.
 ./fotosort.sh /path --max-per-group 3
 ./fotosort.sh /path --labels my_labels.txt       # own subject list, one label per line
 ./fotosort.sh /path --blur-ratio 0               # keep soft bursts (e.g. the only leopard of the trip)
+./fotosort.sh /path --judge --key-file ~/dev/TrendAnalysisClaude/secrets.yaml   # GPT makes the final call per group
 ```
 
 | Flag | Default | Meaning |
@@ -85,8 +98,13 @@ after model load.
 | `--extra-per` | 40 | one extra pick per this many photos in a group, capped at 3x base (0 = off) |
 | `--gap-seconds` | 120 | time gap that starts a new scene |
 | `--scene-sim` | 0.80 | min cosine similarity to stay in a scene |
-| `--dup-sim` | 0.985 | CLIP similarity above which two picks count as duplicates |
-| `--dup-pixel` | 0.93 | thumbnail correlation above which two picks count as duplicates |
+| `--dup-sim` | 0.95 | CLIP similarity above which two picks count as duplicates |
+| `--dup-pixel` | 0.90 | thumbnail correlation above which two picks count as duplicates |
+| `--min-score` | -0.5 | never pick a photo scoring below this |
+| `--subject-weight` | 0.4 | bonus for a large detected subject, penalty for a small cut-off one |
+| `--judge` / `--judge-provider` / `--judge-model` | off / openai / gpt-5.4 | let a vision model choose the final picks per group |
+| `--key-file` | | read the judge API key from a .env or YAML file |
+| `--detector` | yolov8m.pt | YOLOv8 weights (n is 3x faster, m is better on birds) |
 | `--aesthetic-weight` | 0.6 | aesthetics vs sharpness weight in the score |
 | `--blur-ratio` / `--blur-floor` | 0.3 / 20 | blur rejection thresholds (relative to day median / absolute) |
 | `--skip-labels` | document or screenshot | subjects never selected |

@@ -5,3 +5,5 @@ numpy>=1.26
 tqdm>=4.66
 pytest>=8.0
 ultralytics>=8.3
+anthropic>=1.0
+openai>=1.50

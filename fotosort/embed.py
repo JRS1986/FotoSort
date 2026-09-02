@@ -89,32 +89,47 @@ class Embedder:
         return t.cpu().numpy().astype(np.float32)
 
 
-class PersonDetector:
-    """YOLOv8-nano person detector. CLIP zero-shot is unreliable at telling a
-    person in a safari scene from the animals around them; a detector is not."""
+SUBJECT_CLASSES = {"person", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"}
 
-    def __init__(self, device: str | None = None, conf: float = 0.5):
+
+class SubjectDetector:
+    """YOLOv8 detector for people and animals (COCO classes; exotic animals show
+    up as bear/horse/cow/dog, which is fine: we only need 'a creature is here,
+    this big, touching the frame edge or not'). CLIP zero-shot cannot tell a
+    person in a safari scene from the animals around them; a detector can."""
+
+    def __init__(self, device: str | None = None, weights: str = "yolov8m.pt", conf: float = 0.3):
         from ultralytics import YOLO  # slow import, keep local
 
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        self.model = YOLO(str(CACHE_DIR / "yolov8n.pt"))
+        self.model = YOLO(str(CACHE_DIR / weights))
         self.device = device or pick_device()
         self.conf = conf
 
-    def person_fraction(self, images: list[Image.Image]) -> list[float]:
-        """Largest person box as a fraction of the frame, per image (0 = none)."""
+    def detect(self, images: list[Image.Image]) -> list[dict]:
+        """Per image: person (largest person box, fraction of frame, conf>=0.5),
+        subject (largest person/animal box fraction), edge (that box touches the
+        frame border)."""
         if not images:
             return []
         results = self.model.predict(images, imgsz=640, conf=self.conf, verbose=False, device=self.device)
         out = []
         for r in results:
             h, w = r.orig_shape
-            best = 0.0
+            person = subject = 0.0
+            edge = False
             for b in r.boxes:
-                if r.names[int(b.cls)] == "person":
-                    x1, y1, x2, y2 = b.xyxy[0].tolist()
-                    best = max(best, (x2 - x1) * (y2 - y1) / (w * h))
-            out.append(float(best))
+                cls, conf = r.names[int(b.cls)], float(b.conf)
+                if cls not in SUBJECT_CLASSES:
+                    continue
+                x1, y1, x2, y2 = b.xyxy[0].tolist()
+                frac = (x2 - x1) * (y2 - y1) / (w * h)
+                if cls == "person" and conf >= 0.5:
+                    person = max(person, frac)
+                if frac > subject:
+                    subject = frac
+                    edge = x1 < 3 or y1 < 3 or x2 > w - 3 or y2 > h - 3
+            out.append({"person": float(person), "subject": float(subject), "edge": bool(edge)})
         return out
 
 

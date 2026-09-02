@@ -1,6 +1,6 @@
 import numpy as np
 
-from fotosort.select import select_bucket, Candidate
+from fotosort.select import select_day, Candidate
 
 
 def _unit(v):
@@ -9,47 +9,42 @@ def _unit(v):
 
 
 def _cands():
-    # two bursts: scene 0 has three near-duplicates, scene 1 has one shot
     return [
-        Candidate(id="a1", score=0.9, scene=0, emb=_unit([1, 0, 0])),
-        Candidate(id="a2", score=0.8, scene=0, emb=_unit([1, 0.01, 0])),
-        Candidate(id="a3", score=0.7, scene=0, emb=_unit([1, 0, 0.01])),
-        Candidate(id="b1", score=0.5, scene=1, emb=_unit([0, 1, 0])),
+        Candidate(id="a1", score=0.9, bucket="zebra", emb=_unit([1, 0, 0])),
+        Candidate(id="a2", score=0.8, bucket="zebra", emb=_unit([1, 0.01, 0])),   # near-dup of a1
+        Candidate(id="a3", score=0.7, bucket="zebra", emb=_unit([0, 1, 0])),
+        Candidate(id="b1", score=0.5, bucket="gull", emb=_unit([0, 0, 1])),
+        Candidate(id="b2", score=0.4, bucket="cormorant", emb=_unit([0, 0.01, 1])),  # same shot, other label
+        Candidate(id="c1", score=-1.2, bucket="shark", emb=_unit([1, 1, 1])),
     ]
 
 
-def test_best_from_each_scene_comes_first():
-    picks = select_bucket(_cands(), k_max=2, dup_thresh=0.98)
-    assert picks == ["a1", "b1"]
+def test_best_first_with_bucket_budgets():
+    picks = select_day(_cands(), {"zebra": 2, "gull": 1, "cormorant": 1, "shark": 2}, 0.95, 0.9)
+    assert picks == ["a1", "a3", "b1"]
 
 
-def test_near_duplicates_are_skipped_when_filling():
-    picks = select_bucket(_cands(), k_max=4, dup_thresh=0.98)
-    # a2/a3 are near-duplicates of a1 (cos > 0.98), so only 2 picks
-    assert picks == ["a1", "b1"]
+def test_duplicates_are_rejected_across_buckets():
+    picks = select_day(_cands(), {"zebra": 5, "gull": 5, "cormorant": 5, "shark": 5}, 0.95, 0.9)
+    assert "b2" not in picks and "a2" not in picks
 
 
-def test_k_max_caps_selection():
-    cands = [Candidate(id=f"x{i}", score=1 - i * 0.1, scene=i, emb=_unit(np.eye(6)[i])) for i in range(6)]
-    picks = select_bucket(cands, k_max=3, dup_thresh=0.98)
-    assert picks == ["x0", "x1", "x2"]
-
-
-def test_all_duplicates_yield_one_pick():
-    cands = _cands()[:3]
-    assert select_bucket(cands, k_max=5, dup_thresh=0.98) == ["a1"]
+def test_min_score_floor_blocks_weak_photos_even_with_free_slots():
+    picks = select_day(_cands(), {"zebra": 5, "gull": 5, "cormorant": 5, "shark": 5}, 0.95, 0.9, min_score=-0.5)
+    assert "c1" not in picks
+    picks = select_day(_cands(), {"zebra": 5, "gull": 5, "cormorant": 5, "shark": 5}, 0.95, 0.9, min_score=-5)
+    assert "c1" in picks
 
 
 def test_pixel_signature_catches_semantically_different_duplicates():
-    # CLIP says different (sim 0.0) but the thumbnails are the same framing
     sig = _unit(np.arange(16, dtype=np.float32) - 7.5)
     cands = [
-        Candidate(id="p1", score=0.9, scene=0, emb=_unit([1, 0, 0]), sig=sig),
-        Candidate(id="p2", score=0.8, scene=1, emb=_unit([0, 1, 0]), sig=sig),
-        Candidate(id="p3", score=0.7, scene=2, emb=_unit([0, 0, 1]), sig=_unit(np.random.default_rng(1).normal(size=16))),
+        Candidate(id="p1", score=0.9, bucket="x", emb=_unit([1, 0, 0]), sig=sig),
+        Candidate(id="p2", score=0.8, bucket="x", emb=_unit([0, 1, 0]), sig=sig),
+        Candidate(id="p3", score=0.7, bucket="x", emb=_unit([0, 0, 1]), sig=_unit(np.random.default_rng(1).normal(size=16))),
     ]
-    assert select_bucket(cands, k_max=3, dup_thresh=0.98, dup_pixel=0.93) == ["p1", "p3"]
+    assert select_day(cands, {"x": 3}, 0.95, 0.9) == ["p1", "p3"]
 
 
-def test_empty_bucket():
-    assert select_bucket([], k_max=3, dup_thresh=0.98) == []
+def test_empty():
+    assert select_day([], {}, 0.95, 0.9) == []
