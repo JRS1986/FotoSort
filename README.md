@@ -116,6 +116,7 @@ after model load.
 | `--highlights` | Highlights | name of the output subfolder |
 | `--report` | fotosort_report.csv | CSV report path, relative to the photo folder |
 | `--no-cache` | | ignore and do not write the feature cache |
+| `--apply-report` | | skip analysis and copy/move/enhance the `selected=1` rows of the existing report (edit the CSV to override picks) |
 | `--limit N` | | only process the first N files (for testing) |
 | `--enhance` | | enhance the picks: with `--copy` the enhanced version is the copy, with `--move` it goes to `Highlights/Enhanced/` |
 | `--enhance-strength` | 1.0 | 0 = untouched, 1.5 = punchy |

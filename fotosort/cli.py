@@ -100,6 +100,9 @@ def parse_args(argv=None):
     p.add_argument("--workers", type=int, default=4, help="Decoder threads")
     p.add_argument("--no-cache", action="store_true", help="Ignore and do not write the feature cache")
     p.add_argument("--limit", type=int, help="Only process the first N files (for testing)")
+    p.add_argument("--apply-report", action="store_true",
+                   help="Skip analysis: take the picks (selected=1) from the existing report and copy/move/enhance "
+                        "them. Edit the CSV first to override the tool's choices.")
     return p.parse_args(argv)
 
 
@@ -354,6 +357,9 @@ def main(argv=None) -> int:
     for ph in tqdm(photos, unit="img", desc="Reading EXIF", leave=False):
         ph.time = capture_time(ph.path)
 
+    if args.apply_report:
+        return apply_report(photos, root, args)
+
     emb = compute_features(photos, root, args)
     unreadable = [ph for ph in photos if ph.emb is None]
     photos = [ph for ph in photos if ph.emb is not None]
@@ -396,6 +402,11 @@ def main(argv=None) -> int:
             print(f"Enhanced versions would be written to {where}")
         return 0
 
+    return move_picks(picks, root, args, emb)
+
+
+def move_picks(picks: list[Photo], root: Path, args, emb) -> int:
+    out_dir = root / args.highlights
     out_dir.mkdir(exist_ok=True)
     enhanced_only = args.enhance and args.copy  # copy mode: the enhanced version IS the copy
     op = shutil.copy2 if args.copy else shutil.move
@@ -423,11 +434,44 @@ def main(argv=None) -> int:
     return 0
 
 
+def apply_report(photos: list[Photo], root: Path, args) -> int:
+    """Copy/move/enhance whatever the existing report marks selected=1."""
+    report = root / args.report
+    if not report.exists():
+        print(f"No report at {report}; run without --apply-report first.", file=sys.stderr)
+        return 2
+    rows = {r["file"]: r for r in csv.DictReader(open(report))}
+    picks = []
+    for ph in photos:
+        r = rows.get(str(ph.path))
+        if r and r.get("selected") == "1":
+            ph.person = float(r.get("person") or 0)
+            ph.label, ph.selected = r.get("label", ""), True
+            picks.append(ph)
+    missing = sum(1 for f, r in rows.items() if r.get("selected") == "1" and f not in {str(p.path) for p in picks})
+    print(f"{len(picks)} picks from the report" + (f" ({missing} listed files no longer exist)" if missing else ""))
+    if not (args.move or args.copy):
+        for ph in picks:
+            print(f"  {ph.path.relative_to(root)}  [{ph.label}]")
+        print("Dry run. Add --move or --copy.")
+        return 0
+    emb = None
+    if args.enhance and not args.enhance_style:
+        from fotosort.embed import Embedder
+
+        emb = Embedder()  # for style detection of non-people picks
+        cached = cache_mod.load(root)
+        for ph in picks:
+            c = cached.get(ph.key)
+            ph.emb = c["emb"] if c else None
+    return move_picks(picks, root, args, emb)
+
+
 def enhance_picks(picks: list[Photo], sources: dict[str, Path], enh_dir: Path, emb, args, namer) -> None:
     """Enhance each pick from `sources[original path]` into `namer(src)`."""
     from fotosort.enhance import STYLE_PROMPTS, detect_style, enhance_file, image_stats
 
-    style_emb = None if args.enhance_style else emb.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
+    style_emb = None if (args.enhance_style or emb is None) else emb.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
     enh_dir.mkdir(parents=True, exist_ok=True)
     styles = defaultdict(int)
     for ph in tqdm(picks, unit="img", desc="Enhancing"):
@@ -438,7 +482,7 @@ def enhance_picks(picks: list[Photo], sources: dict[str, Path], enh_dir: Path, e
             style = "portrait"  # a visible person: gentle tone curve, protected skin, no heavy clarity
         else:
             stats = image_stats(np.asarray(load_small(str(src), 512), dtype=np.float32))
-            style = detect_style(ph.emb, style_emb, stats)
+            style = detect_style(ph.emb if style_emb is not None else None, style_emb, stats)
         styles[style] += 1
         enhance_file(src, namer(src), style, args.enhance_strength)
     summary = ", ".join(f"{n} {s}" for s, n in sorted(styles.items(), key=lambda kv: -kv[1]))
