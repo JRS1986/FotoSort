@@ -75,7 +75,9 @@ def parse_args(argv=None):
     p.add_argument("--judge", action="store_true",
                    help="Let a vision model choose the final picks from each group's shortlist")
     p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic"], help="API for --judge")
-    p.add_argument("--judge-model", help="Model for --judge (default: gpt-5.4 / claude-opus-5)")
+    p.add_argument("--judge-model", help="Model for --judge (default: gpt-5.6-sol / claude-opus-5)")
+    p.add_argument("--judge-detail", default="high", choices=["high", "low"],
+                   help="Image detail sent to the OpenAI judge: high judges sharpness and faces, low is ~10x cheaper")
     p.add_argument("--key-file", help="File holding the API key (a .env or YAML line), instead of the environment")
     p.add_argument("--detector", default="yolov8m.pt", help="YOLOv8 weights for subject detection (n/s/m/l)")
     p.add_argument("--aesthetic-weight", type=float, default=0.6, help="Weight of aesthetics vs sharpness (0..1)")
@@ -367,7 +369,7 @@ def main(argv=None) -> int:
     if args.judge:
         from fotosort.judge import Judge
 
-        judge = Judge(args.judge_provider, args.judge_model, args.key_file)
+        judge = Judge(args.judge_provider, args.judge_model, args.key_file, args.judge_detail)
         print(f"Judging shortlists with {judge.model} ...")
     buckets = select_photos(photos, args, judge)
     if judge is not None:

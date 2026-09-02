@@ -1,7 +1,8 @@
 """Optional final pass: a vision model looks at each group's shortlist and picks
 the keepers the way a photo editor would.
 
-Providers: "openai" (OPENAI_API_KEY, default model gpt-5.4) or "anthropic"
+Providers: "openai" (OPENAI_API_KEY, default model gpt-5.6-sol, OpenAI's
+strongest vision model as of September 2026) or "anthropic"
 (ANTHROPIC_API_KEY, default model claude-opus-5). A key can also be read from
 a file with --key-file (a .env line like OPENAI_API_KEY=..., or a YAML line
 like openai_api_key: ...)."""
@@ -15,7 +16,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_MODELS = {"openai": "gpt-5.4", "anthropic": "claude-opus-5"}
+DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "anthropic": "claude-opus-5"}
 KEY_NAMES = {"openai": ("OPENAI_API_KEY", "openai_api_key"), "anthropic": ("ANTHROPIC_API_KEY", "anthropic_api_key")}
 
 
@@ -58,7 +59,7 @@ class Verdict:
     error: str | None = None    # set when the judge could not run; caller falls back
 
 
-def _jpeg_b64(path: Path, max_side: int = 768) -> str:
+def _jpeg_b64(path: Path, max_side: int = 1024) -> str:
     img = load_small(str(path), max_side)
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=80)
@@ -87,11 +88,13 @@ def parse_verdict(text: str, ids: list[str]) -> Verdict:
 
 
 class Judge:
-    def __init__(self, provider: str = "openai", model: str | None = None, key_file: str | None = None):
+    def __init__(self, provider: str = "openai", model: str | None = None, key_file: str | None = None,
+                 detail: str = "high"):
         if provider not in DEFAULT_MODELS:
             raise SystemExit(f"Unknown judge provider {provider!r}; use openai or anthropic")
         self.provider = provider
         self.model = model or DEFAULT_MODELS[provider]
+        self.detail = detail  # OpenAI image detail: "high" sees sharpness and faces, "low" is ~10x cheaper
         self.usage = {"input": 0, "output": 0}
         key = read_key(provider, key_file)
         if provider == "openai":
@@ -105,7 +108,7 @@ class Judge:
 
     def judge(self, paths: list[Path], subject: str, day: str, k: int) -> Verdict:
         ids = [str(p) for p in paths]
-        images = [_jpeg_b64(p) for p in paths]
+        images = [_jpeg_b64(p, 1024 if self.detail == "high" else 512) for p in paths]
         prompt = PROMPT.format(n=len(paths), day=day, subject=subject, k=k)
         try:
             text = self._ask_openai(images, prompt) if self.provider == "openai" else self._ask_anthropic(images, prompt)
@@ -119,7 +122,7 @@ class Judge:
         content = []
         for i, b64 in enumerate(images, 1):
             content.append({"type": "text", "text": f"Photo {i}"})
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "low"}})
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": self.detail}})
         content.append({"type": "text", "text": prompt})
         resp = self.client.chat.completions.create(
             model=self.model,

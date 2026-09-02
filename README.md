@@ -44,11 +44,14 @@ Then the folder is organised:
    shortlist (about three times the budget) and picks the keepers the way a
    photo editor would: subject visible and sharp, faces not in shadow, best of
    each burst, as varied as possible. Each pick gets a one-line reason in the
-   report. Providers: OpenAI (default, `gpt-5.4`, key from `OPENAI_API_KEY`)
-   or Anthropic (`--judge-provider anthropic`, `claude-opus-5`,
+   report. Providers: OpenAI (default `gpt-5.6-sol`, OpenAI's strongest
+   vision model as of September 2026, key from `OPENAI_API_KEY`) or
+   Anthropic (`--judge-provider anthropic`, `claude-opus-5`,
    `ANTHROPIC_API_KEY`). `--key-file path` reads the key from a `.env` or
-   YAML file instead. Images are sent at low detail, so a 2,000-photo folder
-   costs well under a dollar. Blurry frames (below 30 %
+   YAML file instead. Images go over at high detail so the judge can see
+   sharpness and faces; a 2,000-photo folder shortlists ~500 frames and costs
+   around two dollars. `--judge-detail low` is roughly ten times cheaper.
+   `--judge-model gpt-5.6-terra` is the mid-priced alternative. Blurry frames (below 30 %
    of the day's median sharpness) and badly clipped frames are never picked.
 
 The combined score is a weighted z-score of aesthetics and log-sharpness minus
@@ -102,7 +105,8 @@ after model load.
 | `--dup-pixel` | 0.90 | thumbnail correlation above which two picks count as duplicates |
 | `--min-score` | -0.5 | never pick a photo scoring below this |
 | `--subject-weight` | 0.4 | bonus for a large detected subject, penalty for a small cut-off one |
-| `--judge` / `--judge-provider` / `--judge-model` | off / openai / gpt-5.4 | let a vision model choose the final picks per group |
+| `--judge` / `--judge-provider` / `--judge-model` | off / openai / gpt-5.6-sol | let a vision model choose the final picks per group |
+| `--judge-detail` | high | image detail for the OpenAI judge (`low` is ~10x cheaper) |
 | `--key-file` | | read the judge API key from a .env or YAML file |
 | `--detector` | yolov8m.pt | YOLOv8 weights (n is 3x faster, m is better on birds) |
 | `--aesthetic-weight` | 0.6 | aesthetics vs sharpness weight in the score |
