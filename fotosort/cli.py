@@ -82,10 +82,14 @@ def parse_args(argv=None):
 
 
 def _decode(photo: Photo, prepare):
-    img = load_small(str(photo.path))
-    gray = to_gray(img)
-    ex = exposure(gray)
-    return photo, sharpness(gray), ex, prepare(img)
+    """Returns (photo, sharpness, exposure, tensor) or (photo, None, error, None)."""
+    try:
+        img = load_small(str(photo.path))
+        gray = to_gray(img)
+        ex = exposure(gray)
+        return photo, sharpness(gray), ex, prepare(img)
+    except Exception as e:  # missing, truncated or non-JPEG file: skip, do not abort the run
+        return photo, None, e, None
 
 
 def compute_features(photos: list[Photo], root: Path, args):
@@ -112,6 +116,10 @@ def compute_features(photos: list[Photo], root: Path, args):
             batch, tensors = [], []
             futures = pool.map(lambda ph: _decode(ph, emb.prepare), todo)
             for ph, sh, ex, tensor in tqdm(futures, total=len(todo), unit="img", desc="Analysing"):
+                if sh is None:
+                    tqdm.write(f"Skipping {ph.path.name}: {ex}")
+                    ph.reject = "unreadable"
+                    continue
                 ph.sharpness, ph.clip_low, ph.clip_high, ph.mean = sh, ex["clip_low"], ex["clip_high"], ex["mean"]
                 batch.append(ph)
                 tensors.append(tensor)
@@ -124,6 +132,8 @@ def compute_features(photos: list[Photo], root: Path, args):
                     p_.emb = e_
         if not args.no_cache:
             for ph in todo:
+                if ph.emb is None:
+                    continue
                 cached[ph.key] = {
                     "emb": ph.emb, "sharpness": ph.sharpness, "clip_low": ph.clip_low,
                     "clip_high": ph.clip_high, "mean": ph.mean,
@@ -251,6 +261,13 @@ def main(argv=None) -> int:
         ph.time = capture_time(ph.path)
 
     emb = compute_features(photos, root, args)
+    unreadable = [ph for ph in photos if ph.emb is None]
+    photos = [ph for ph in photos if ph.emb is not None]
+    if unreadable:
+        print(f"Skipped {len(unreadable)} unreadable files")
+    if not photos:
+        print("No readable JPEGs.")
+        return 1
     labels = load_labels(args.labels)
     assign_scenes_and_labels(photos, emb.text_embeddings(labels), labels, args)
     score_and_reject(photos, args)
