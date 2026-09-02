@@ -19,8 +19,9 @@ from fotosort import cache as cache_mod
 from fotosort.group import cluster_scenes
 from fotosort.labels import bucket_name, load_labels
 from fotosort.quality import exposure, load_small, sharpness, signature, to_gray
+from fotosort.judge import Verdict
 from fotosort.scan import capture_time, find_jpegs, sidecars
-from fotosort.select import Candidate, ScenedCandidate, build_shortlist, select_day
+from fotosort.select import Candidate, ScenedCandidate, build_shortlist, chunk_for_tournament, select_day
 
 
 @dataclass
@@ -77,8 +78,12 @@ def parse_args(argv=None):
                    help="Let a vision model choose the final picks from each group's shortlist")
     p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic"], help="API for --judge")
     p.add_argument("--judge-model", help="Model for --judge (default: gpt-5.6-sol / claude-opus-5)")
+    p.add_argument("--judge-coverage", default="full", choices=["full", "shortlist"],
+                   help="full: the judge sees every frame (groups are judged in chunks, chunk winners meet in a "
+                        "final round); shortlist: only the best ~30 per group by score (cheaper)")
+    p.add_argument("--judge-chunk", type=int, default=24, help="Frames per judge request in full coverage")
     p.add_argument("--shortlist-max", type=int, default=30,
-                   help="Frames per group shown to the judge (at least this, or 3x the group's budget)")
+                   help="Frames per group shown to the judge in shortlist mode (or 3x the budget)")
     p.add_argument("--taste-dir", help="Folder with photos you love; frames that resemble them get a score bonus")
     p.add_argument("--taste-weight", type=float, default=0.5, help="Max bonus from --taste-dir")
     p.add_argument("--judge-detail", default="high", choices=["high", "low"],
@@ -327,20 +332,38 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
             for label, k in budgets.items():
                 group = [p for p in day_buckets[label] if not p.reject]
                 sc = [ScenedCandidate(str(p.path), p.score, p.label, p.emb, p.sig, p.scene) for p in group]
-                ids = build_shortlist(sc, max(args.shortlist_max, 3 * k))
-                if not ids:
+                if args.judge_coverage == "full":
+                    rounds = chunk_for_tournament(sc, args.judge_chunk)
+                else:
+                    rounds = [build_shortlist(sc, max(args.shortlist_max, 3 * k))]
+                rounds = [r for r in rounds if r]
+                if not rounds:
                     continue
-                for i in ids:
-                    by_path[i].shortlisted = True
-                boxes = judge_boxes([by_path[i] for i in ids], judge)
-                verdict = judge.judge([Path(i) for i in ids], label, day, k, boxes)
-                if verdict.error:
-                    tqdm.write(f"Judge failed for {day} {label} ({verdict.error}); using scores instead")
-                    chosen.update(ids[:k])
-                    continue
-                for i in verdict.picks[:k]:
-                    chosen.add(i)
-                    by_path[i].judge_reason = verdict.reasons.get(i, "")
+                n_total = sum(map(len, rounds))
+                finalists: list[str] = []
+                for ids in rounds:
+                    for i in ids:
+                        by_path[i].shortlisted = True
+                    # each chunk may send on its share of the budget, at least 2, so a strong burst is not capped early
+                    kk = k if len(rounds) == 1 else min(k, max(2, -(-k * len(ids) // n_total) + 1))
+                    verdict = judge.judge([Path(i) for i in ids], label, day, kk, judge_boxes([by_path[i] for i in ids], judge))
+                    if verdict.error:
+                        tqdm.write(f"Judge failed for {day} {label} ({verdict.error}); using scores instead")
+                        picks = sorted(ids, key=lambda i: by_path[i].score, reverse=True)[:kk]
+                        verdict = Verdict(picks, {i: "(judge failed, by score)" for i in picks})
+                    for i in verdict.picks[:kk]:
+                        finalists.append(i)
+                        by_path[i].judge_reason = verdict.reasons.get(i, "")
+                if len(finalists) > k:  # final round among chunk winners
+                    verdict = judge.judge([Path(i) for i in finalists], label, day, k,
+                                          judge_boxes([by_path[i] for i in finalists], judge), final=True)
+                    if not verdict.error and verdict.picks:
+                        for i in verdict.picks[:k]:
+                            by_path[i].judge_reason = verdict.reasons.get(i) or by_path[i].judge_reason
+                        finalists = verdict.picks[:k]
+                    else:
+                        finalists = finalists[:k]
+                chosen.update(finalists)
         for p in by_path.values():
             if p.day == day:
                 p.selected = str(p.path) in chosen

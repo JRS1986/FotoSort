@@ -49,11 +49,20 @@ PROMPT = (
     "(the eye or face must be crisp), and to check that the subject is not looking away. "
     "Choose up to {k} keepers for a family travel album: technically good, as different from each "
     "other as possible (different pose, composition, moment or individual), and including atmospheric "
-    "scenery or environmental shots, not only close-ups. Use the full budget of {k} when there are "
+    "scenery or environmental shots, not only close-ups. Prefer animals that show their face or eye; a "
+    "rear view or an animal looking away only if nothing better exists. Use the full budget of {k} when there are "
     "enough decent, distinct frames; drop a frame only when it is clearly worse than another keeper, "
     "soft, shows a tiny or cut-off subject, or is a near-duplicate. Unless every frame is unusable, "
     "always keep at least the single best one. "
     'Reply with JSON only, in this shape: {{"picks": [{{"photo": 3, "reason": "short reason"}}]}}'
+)
+
+FINAL_PROMPT = (
+    "These {n} photos are the finalists from a larger set taken on {day} showing: {subject}. Each one "
+    "was already judged good in its own batch. Now choose the final {k} for the album: the strongest, "
+    "and as different from each other as possible. Where a photo has a '100% crop' after it, use it to "
+    "judge sharpness. "
+    'Reply with JSON only: {{"picks": [{{"photo": 3, "reason": "short reason"}}]}}'
 )
 
 RETRY_PROMPT = (
@@ -140,7 +149,7 @@ class Judge:
             self.client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
 
     def judge(self, paths: list[Path], subject: str, day: str, k: int,
-              boxes: dict[str, tuple | None] | None = None) -> Verdict:
+              boxes: dict[str, tuple | None] | None = None, final: bool = False) -> Verdict:
         ids = [str(p) for p in paths]
         images = []
         for p in paths:
@@ -152,8 +161,9 @@ class Judge:
                 except Exception:
                     crop = None
             images.append((_jpeg_b64(p, 1024 if self.detail == "high" else 512), crop))
-        verdict = self._judge(images, ids, PROMPT.format(n=len(paths), day=day, subject=subject, k=k))
-        if not verdict.error and not verdict.picks and len(paths) >= 3:
+        template = FINAL_PROMPT if final else PROMPT
+        verdict = self._judge(images, ids, template.format(n=len(paths), day=day, subject=subject, k=k))
+        if not final and not verdict.error and not verdict.picks and len(paths) >= 3:
             second = self._judge(images, ids, RETRY_PROMPT.format(n=len(paths), day=day, subject=subject))
             if not second.error and second.picks:
                 verdict = Verdict(second.picks[:1], {i: "(second look) " + second.reasons.get(i, "") for i in second.picks[:1]})

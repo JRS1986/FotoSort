@@ -40,13 +40,14 @@ Then the folder is organised:
    `--dup-pixel`). So a weak photo never gets in just because its subject has
    free slots, and a bird colony labelled "seagull" in one frame and
    "cormorant" in the next cannot get in twice.
-4. **Judge (optional, `--judge`).** A vision model looks at each group's
-   shortlist and picks the keepers the way a photo editor would: subject
-   visible and sharp, faces not in shadow, best of each burst, as varied as
-   possible. The shortlist (up to `--shortlist-max`, default 30) contains the
-   best frame of every burst first, then the next-best by score; only
-   pixel-identical frames are dropped, so deciding between similar moments is
-   left to the judge. Every frame goes over twice: the whole picture, and a
+4. **Judge (optional, `--judge`).** A vision model picks the keepers the way
+   a photo editor would: subject visible and sharp, faces not in shadow, best
+   of each burst, as varied as possible. By default it sees **every** frame
+   (`--judge-coverage full`): each group is judged in time-ordered chunks of
+   `--judge-chunk` frames (default 24), every chunk sends on its share of the
+   budget, and the chunk winners meet in a final round. Only pixel-identical
+   frames are skipped. `--judge-coverage shortlist` is the cheaper variant
+   that shows only the best ~30 frames per group by score. Every frame goes over twice: the whole picture, and a
    native-resolution crop of the detected subject so the judge can see whether
    the eye is actually sharp. If the judge keeps nothing from a group, it is
    asked once more for the single best frame. Each pick gets a one-line
@@ -63,7 +64,9 @@ Then the folder is organised:
    YAML file instead. Images go over at high detail so the judge can see
    sharpness and faces; a 2,000-photo folder shortlists ~500 frames and costs
    around two dollars. `--judge-detail low` is roughly ten times cheaper.
-   `--judge-model gpt-5.6-terra` is the mid-priced alternative. Blurry frames (below 30 %
+   `--judge-model gpt-5.6-terra` is the mid-priced alternative. Full coverage
+   of a 2,000-photo folder is roughly 2M input tokens: about $4 with Terra,
+   $8 with Sol. Blurry frames (below 30 %
    of the day's median sharpness) and badly clipped frames are never picked.
 
 The combined score is a weighted z-score of aesthetics and log-sharpness minus
@@ -123,7 +126,8 @@ after model load.
 | `--detector` | yolov8m.pt | YOLOv8 weights (n is 3x faster, m is better on birds) |
 | `--aesthetic-weight` | 0.6 | aesthetics vs sharpness weight in the score |
 | `--blur-ratio` / `--blur-floor` | 0.15 / 20 | blur rejection thresholds (relative to day median / absolute) |
-| `--shortlist-max` | 30 | frames per group shown to the judge (or 3x the group's budget if larger) |
+| `--judge-coverage` / `--judge-chunk` | full / 24 | the judge sees every frame, in chunks of this size, plus a final round |
+| `--shortlist-max` | 30 | frames per group in `shortlist` coverage (or 3x the group's budget) |
 | `--taste-dir` / `--taste-weight` | off / 0.5 | folder of photos you love; frames resembling them get up to this bonus |
 | `--skip-labels` | document or screenshot | subjects never selected |
 | `--person-area` | 0.02 | min person box fraction for the people bucket (0 = no detector) |

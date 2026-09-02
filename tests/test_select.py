@@ -63,3 +63,15 @@ def test_shortlist_covers_every_scene_before_filling_by_score():
     # scene coverage first (s0a, s1a, s2a), then fill (s0c); pixel twin s0b never
     assert build_shortlist(cands, cap=4) == ["s0a", "s1a", "s2a", "s0c"]
     assert build_shortlist(cands, cap=2) == ["s0a", "s1a"]
+
+
+def test_tournament_chunks_see_every_frame_once_and_balance_sizes():
+    from fotosort.select import ScenedCandidate, chunk_for_tournament
+    rng = np.random.default_rng(5)
+    cands = [ScenedCandidate(id=f"f{i}", score=rng.normal(), bucket="x", emb=_unit([1, 0]),
+                             sig=_unit(rng.normal(size=16)), scene=i // 7) for i in range(50)]
+    chunks = chunk_for_tournament(cands, chunk=24)
+    flat = [i for ch in chunks for i in ch]
+    assert sorted(flat) == sorted(c.id for c in cands)      # everything shown exactly once
+    assert len(chunks) == 3 and max(map(len, chunks)) - min(map(len, chunks)) <= 1
+    assert chunk_for_tournament([], 24) == []

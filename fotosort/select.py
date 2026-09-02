@@ -81,3 +81,22 @@ def build_shortlist(cands: list[ScenedCandidate], cap: int, pixel_dup: float = 0
         if c not in out:
             out.append(c)
     return [c.id for c in out[:cap]]
+
+
+def chunk_for_tournament(cands: list[ScenedCandidate], chunk: int = 24, pixel_dup: float = 0.97) -> list[list[str]]:
+    """Split one bucket into judge-sized chunks so every frame is seen.
+    Pixel-identical frames are dropped first (best kept); the rest are ordered
+    by scene, then by score, and cut into chunks of at most `chunk` frames.
+    Sizes are balanced so the last chunk is not a stub."""
+    ranked = sorted(cands, key=lambda c: c.score, reverse=True)
+    kept: list[ScenedCandidate] = []
+    for c in ranked:
+        if any(c.sig is not None and p.sig is not None and float(np.dot(c.sig, p.sig)) >= pixel_dup for p in kept):
+            continue
+        kept.append(c)
+    kept.sort(key=lambda c: (c.scene, -c.score))
+    if not kept:
+        return []
+    n_chunks = max(1, -(-len(kept) // chunk))
+    size = -(-len(kept) // n_chunks)
+    return [[c.id for c in kept[i:i + size]] for i in range(0, len(kept), size)]
