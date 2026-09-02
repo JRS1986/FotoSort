@@ -87,6 +87,29 @@ after model load.
 | `--report` | fotosort_report.csv | CSV report path, relative to the photo folder |
 | `--no-cache` | | ignore and do not write the feature cache |
 | `--limit N` | | only process the first N files (for testing) |
+| `--enhance` | | write enhanced copies of the picks into `Highlights/Enhanced/` |
+| `--enhance-strength` | 1.0 | 0 = untouched, 1.5 = punchy |
+| `--enhance-style` | auto | force one style for all picks |
+
+### Enhancing the picks
+
+```bash
+./fotosort.sh /path --move --enhance                  # picks in Highlights/, edited copies in Highlights/Enhanced/
+./fotosort.sh /path --move --enhance --enhance-strength 1.3
+./fotosort.sh enhance /any/folder                     # enhance any folder into <folder>/Enhanced
+./fotosort.sh enhance IMG_0042.jpg --style landscape --strength 0.8
+```
+
+`--enhance` detects the style of each pick with CLIP (wildlife, landscape,
+golden hour, portrait, night, black and white, food, urban, water, macro) and
+applies a matching recipe: white balance (skipped for golden hour), auto
+levels, shadow/highlight tone curve, an S-curve for contrast, vibrance (skin
+protected for portraits), local contrast ("clarity"), colour denoise for
+night shots, sharpening with a noise threshold, and a subtle vignette for
+wildlife and portraits. Every amount is scaled by the image's own statistics,
+so an already colourful or contrasty frame gets a lighter touch. Output is
+full resolution JPEG (quality 92) with the original EXIF and colour profile.
+Originals are never modified.
 
 Nothing is deleted, ever. Without `--move` or `--copy` the tool only writes the
 report. `Highlights/` is excluded from scanning, so running twice is safe.
@@ -103,6 +126,7 @@ fotosort/
   scan.py     JPEG discovery, EXIF capture time, RAW/XMP sidecars
   labels.py   default subject list
   cache.py    per-folder feature cache (.fotosort_cache.npz)
+  enhance.py  style detection + enhancement recipes, also the `enhance` subcommand
 tests/        pytest unit tests + make_testset.py (synthetic EXIF-dated images)
 ```
 

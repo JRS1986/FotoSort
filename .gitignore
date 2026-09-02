@@ -2,3 +2,21 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Photos and tool output never belong in the repo
+.DS_Store
+SuedAfrika/
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.heic
+*.cr2
+*.cr3
+*.nef
+*.arw
+*.dng
+Highlights/
+Enhanced/
+.fotosort_cache.npz
+fotosort_report.csv

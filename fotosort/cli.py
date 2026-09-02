@@ -69,6 +69,10 @@ def parse_args(argv=None):
     p.add_argument("--labels", help="Text file with one subject label per line (overrides defaults)")
     p.add_argument("--skip-labels", default="document or screenshot", help="Comma-separated labels never selected")
     p.add_argument("--with-sidecars", action="store_true", help="Also move RAW/XMP files with the same name")
+    p.add_argument("--enhance", action="store_true",
+                   help="Also write style-aware enhanced versions of the picks into Highlights/Enhanced")
+    p.add_argument("--enhance-strength", type=float, default=1.0, help="0 = untouched, 1 = default, 1.5 = punchy")
+    p.add_argument("--enhance-style", help="Force one enhancement style for all picks instead of detecting it")
     p.add_argument("--report", default="fotosort_report.csv", help="CSV report path (relative to folder)")
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--workers", type=int, default=4, help="Decoder threads")
@@ -84,7 +88,8 @@ def _decode(photo: Photo, prepare):
     return photo, sharpness(gray), ex, prepare(img)
 
 
-def compute_features(photos: list[Photo], root: Path, args) -> tuple[np.ndarray, list[str]]:
+def compute_features(photos: list[Photo], root: Path, args):
+    """Fill per-photo features (from cache or model) and return the Embedder."""
     cached = {} if args.no_cache else cache_mod.load(root)
     todo = []
     for ph in photos:
@@ -128,8 +133,7 @@ def compute_features(photos: list[Photo], root: Path, args) -> tuple[np.ndarray,
     all_emb = np.stack([ph.emb for ph in photos])
     for ph, a in zip(photos, emb.aesthetic(all_emb)):
         ph.aesthetic = float(a)
-    labels = load_labels(args.labels)
-    return emb.text_embeddings(labels), labels
+    return emb
 
 
 def _z(x: np.ndarray) -> np.ndarray:
@@ -246,8 +250,9 @@ def main(argv=None) -> int:
     for ph in tqdm(photos, unit="img", desc="Reading EXIF", leave=False):
         ph.time = capture_time(ph.path)
 
-    text_emb, labels = compute_features(photos, root, args)
-    assign_scenes_and_labels(photos, text_emb, labels, args)
+    emb = compute_features(photos, root, args)
+    labels = load_labels(args.labels)
+    assign_scenes_and_labels(photos, emb.text_embeddings(labels), labels, args)
     score_and_reject(photos, args)
     buckets = select_photos(photos, args)
 
@@ -267,15 +272,43 @@ def main(argv=None) -> int:
         print(f"\nDry run. Add --move (or --copy) to put these into {out_dir}:")
         for ph in picks:
             print(f"  {ph.path.relative_to(root)}  [{ph.day} {ph.label}, score {ph.score:+.2f}]")
+        if args.enhance:
+            print(f"Enhanced versions would be written to {out_dir / 'Enhanced'}")
         return 0
 
     out_dir.mkdir(exist_ok=True)
     op = shutil.copy2 if args.copy else shutil.move
     moved = 0
+    new_paths: dict[str, Path] = {}
     for ph in picks:
         targets = [ph.path] + (sidecars(ph.path) if args.with_sidecars else [])
         for src in targets:
-            op(str(src), str(unique_dest(out_dir, src, root)))
+            dest = unique_dest(out_dir, src, root)
+            op(str(src), str(dest))
             moved += 1
+            if src == ph.path:
+                new_paths[str(ph.path)] = dest
     print(f"{'Copied' if args.copy else 'Moved'} {moved} files into {out_dir}")
+
+    if args.enhance:
+        enhance_picks(picks, new_paths, out_dir / "Enhanced", emb, args)
     return 0
+
+
+def enhance_picks(picks: list[Photo], new_paths: dict[str, Path], enh_dir: Path, emb, args) -> None:
+    from fotosort.enhance import STYLE_PROMPTS, detect_style, enhance_file, image_stats
+
+    style_emb = None if args.enhance_style else emb.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
+    enh_dir.mkdir(parents=True, exist_ok=True)
+    styles = defaultdict(int)
+    for ph in tqdm(picks, unit="img", desc="Enhancing"):
+        src = new_paths[str(ph.path)]
+        if args.enhance_style:
+            style = args.enhance_style
+        else:
+            stats = image_stats(np.asarray(load_small(str(src), 512), dtype=np.float32))
+            style = detect_style(ph.emb, style_emb, stats)
+        styles[style] += 1
+        enhance_file(src, enh_dir / src.name, style, args.enhance_strength)
+    summary = ", ".join(f"{n} {s}" for s, n in sorted(styles.items(), key=lambda kv: -kv[1]))
+    print(f"Enhanced {len(picks)} picks into {enh_dir} ({summary})")
