@@ -267,7 +267,7 @@ def enhance(img: Image.Image, style: str, strength: float = 1.0) -> Image.Image:
 def detect_style_from_stats(stats: dict) -> str:
     if stats["mean"] < 45:
         return "night"  # checked before mono: a dark shot must keep its colour
-    if stats["chroma"] < 4.0:
+    if stats["chroma"] < 1.0:  # a real mono JPEG sits near 0; grey-day colour shots are 2-4
         return "black and white"
     if stats["warmth"] > 30 and stats["chroma"] > 15:
         return "golden hour"
@@ -279,12 +279,14 @@ def detect_style(emb: np.ndarray | None, style_emb: np.ndarray | None, stats: di
     heuristic = detect_style_from_stats(stats)
     if emb is None or style_emb is None:
         return heuristic
-    style = STYLES[int(np.argmax(emb @ style_emb.T))]
+    scores = emb @ style_emb.T
+    order = [STYLES[i] for i in np.argsort(-scores)]
     if heuristic == "black and white":
         return heuristic  # CLIP sometimes misses mono; chroma does not
     if heuristic == "night" and stats["mean"] < 35:
         return "night"
-    return style
+    # Never desaturate a colour photo: CLIP calls penguins on grey rock "black and white".
+    return next(st for st in order if st != "black and white" or stats["chroma"] < 1.0)
 
 
 def save_like_original(out: Image.Image, original: Image.Image, dst: Path, quality: int = 92) -> None:

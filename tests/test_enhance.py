@@ -76,3 +76,15 @@ def test_save_preserves_exif(tmp_path):
         save_like_original(out, im, dst)
     with Image.open(dst) as im2:
         assert im2.getexif().get_ifd(0x8769).get(36867) == "2026:09:01 10:00:00"
+
+
+def test_colour_photo_never_gets_black_and_white_style():
+    from fotosort.enhance import detect_style, STYLES
+    stats = {"chroma": 25.0, "mean": 120.0, "warmth": 5.0, "std": 50.0, "dark_frac": 0.1}
+    style_emb = np.eye(len(STYLES), dtype=np.float32)
+    emb = np.zeros(len(STYLES), dtype=np.float32)
+    emb[STYLES.index("black and white")] = 1.0
+    emb[STYLES.index("wildlife")] = 0.5
+    assert detect_style(emb, style_emb, stats) == "wildlife"
+    stats["chroma"] = 0.5
+    assert detect_style(emb, style_emb, stats) == "black and white"
