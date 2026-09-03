@@ -131,12 +131,13 @@ def parse_verdict(text: str, ids: list[str]) -> Verdict:
 
 class Judge:
     def __init__(self, provider: str = "openai", model: str | None = None, key_file: str | None = None,
-                 detail: str = "high"):
+                 detail: str = "high", hint: str = ""):
         if provider not in DEFAULT_MODELS:
             raise SystemExit(f"Unknown judge provider {provider!r}; use openai or anthropic")
         self.provider = provider
         self.model = model or DEFAULT_MODELS[provider]
         self.detail = detail  # OpenAI image detail: "high" sees sharpness and faces, "low" is ~10x cheaper
+        self.hint = hint.strip()  # extra guidance for this shoot, appended to every prompt
         self.usage = {"input": 0, "output": 0}
         key = read_key(provider, key_file)
         if provider == "openai":
@@ -162,7 +163,10 @@ class Judge:
                     crop = None
             images.append((_jpeg_b64(p, 1024 if self.detail == "high" else 512), crop))
         template = FINAL_PROMPT if final else PROMPT
-        verdict = self._judge(images, ids, template.format(n=len(paths), day=day, subject=subject, k=k))
+        prompt = template.format(n=len(paths), day=day, subject=subject, k=k)
+        if self.hint:
+            prompt = f"About this shoot: {self.hint}\n\n{prompt}"
+        verdict = self._judge(images, ids, prompt)
         if not final and not verdict.error and not verdict.picks and len(paths) >= 3:
             second = self._judge(images, ids, RETRY_PROMPT.format(n=len(paths), day=day, subject=subject))
             if not second.error and second.picks:

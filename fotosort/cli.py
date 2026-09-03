@@ -86,6 +86,8 @@ def parse_args(argv=None):
                    help="Frames per group shown to the judge in shortlist mode (or 3x the budget)")
     p.add_argument("--taste-dir", help="Folder with photos you love; frames that resemble them get a score bonus")
     p.add_argument("--taste-weight", type=float, default=0.5, help="Max bonus from --taste-dir")
+    p.add_argument("--judge-hint", default="",
+                   help="One or two sentences about this shoot for the judge, e.g. what counts as a keeper")
     p.add_argument("--judge-detail", default="high", choices=["high", "low"],
                    help="Image detail sent to the OpenAI judge: high judges sharpness and faces, low is ~10x cheaper")
     p.add_argument("--key-file", help="File holding the API key (a .env or YAML line), instead of the environment")
@@ -439,7 +441,7 @@ def main(argv=None) -> int:
     if args.judge:
         from fotosort.judge import Judge
 
-        judge = Judge(args.judge_provider, args.judge_model, args.key_file, args.judge_detail)
+        judge = Judge(args.judge_provider, args.judge_model, args.key_file, args.judge_detail, args.judge_hint)
         judge.detector = None
         if args.person_area > 0:
             from fotosort.embed import SubjectDetector

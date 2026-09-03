@@ -1,0 +1,21 @@
+# Subject labels for a whale-watching / dolphin boat trip.
+# Use with: --labels labels/whale_watching.txt
+humpback whale breaching out of the water
+whale tail fluke above the water
+whale back and dorsal fin at the surface
+whale blow spout of spray
+dolphin
+pod of dolphins jumping
+seal swimming
+shark fin
+seabird flying over the sea
+gannet or albatross
+penguin
+boat
+people on a boat
+portrait of a person
+group of people
+child
+open sea with waves and nothing else
+coastline, harbour or cliffs
+sunset over the ocean
