@@ -96,6 +96,9 @@ def parse_args(argv=None):
     p.add_argument("--blur-ratio", type=float, default=0.15, help="Reject if sharpness < ratio * day median")
     p.add_argument("--blur-floor", type=float, default=20.0, help="Reject if sharpness below this absolute value")
     p.add_argument("--labels", help="Text file with one subject label per line (overrides defaults)")
+    p.add_argument("--label-mode", default="scene", choices=["scene", "image"],
+                   help="scene: one subject label per burst (steady for walking safaris); image: label every frame "
+                        "on its own (use on a boat or anywhere the background never changes)")
     p.add_argument("--person-area", type=float, default=0.02,
                    help="A detected person covering at least this fraction of the frame puts the photo in the "
                         "'people' bucket (0 = disable the detector)")
@@ -273,16 +276,21 @@ def assign_scenes_and_labels(photos: list[Photo], text_emb: np.ndarray, labels: 
         for p, s in zip(group, ids):
             p.scene = offset + s
         offset += max(ids) + 1
-    scenes: dict[int, list[Photo]] = defaultdict(list)
-    for ph in photos:
-        scenes[ph.scene].append(ph)
-    scene_ids = sorted(scenes)
-    means = np.stack([np.mean([p.emb for p in scenes[s]], axis=0) for s in scene_ids])
-    means /= np.linalg.norm(means, axis=1, keepdims=True) + 1e-9
-    names, probs = classify(means, text_emb, labels)
-    for s, n, pr in zip(scene_ids, names, probs):
-        for p in scenes[s]:
+    if args.label_mode == "image":
+        names, probs = classify(np.stack([p.emb for p in photos]), text_emb, labels)
+        for p, n, pr in zip(photos, names, probs):
             p.label, p.label_prob = bucket_name(n), float(pr)
+    else:
+        scenes: dict[int, list[Photo]] = defaultdict(list)
+        for ph in photos:
+            scenes[ph.scene].append(ph)
+        scene_ids = sorted(scenes)
+        means = np.stack([np.mean([p.emb for p in scenes[s]], axis=0) for s in scene_ids])
+        means /= np.linalg.norm(means, axis=1, keepdims=True) + 1e-9
+        names, probs = classify(means, text_emb, labels)
+        for s, n, pr in zip(scene_ids, names, probs):
+            for p in scenes[s]:
+                p.label, p.label_prob = bucket_name(n), float(pr)
     apply_person_override(photos, args.person_area)
 
 
@@ -358,7 +366,24 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                     for i in verdict.picks[:kk]:
                         finalists.append(i)
                         by_path[i].judge_reason = verdict.reasons.get(i, "")
-                if len(finalists) > k:  # final round among chunk winners
+                # knock-out rounds: while too many finalists for one request, judge them in chunks again
+                while len(finalists) > max(k, args.judge_chunk):
+                    n_chunks = -(-len(finalists) // args.judge_chunk)
+                    size = -(-len(finalists) // n_chunks)
+                    nxt: list[str] = []
+                    for i0 in range(0, len(finalists), size):
+                        ids = finalists[i0:i0 + size]
+                        kk = min(k, max(2, -(-k * len(ids) // len(finalists)) + 1))
+                        verdict = judge.judge([Path(i) for i in ids], label, day, kk,
+                                              judge_boxes([by_path[i] for i in ids], judge), final=True)
+                        picks = verdict.picks[:kk] if not verdict.error and verdict.picks else ids[:kk]
+                        for i in picks:
+                            by_path[i].judge_reason = verdict.reasons.get(i) or by_path[i].judge_reason
+                        nxt += picks
+                    if len(nxt) >= len(finalists):
+                        break
+                    finalists = nxt
+                if len(finalists) > k:  # final round among the remaining winners
                     verdict = judge.judge([Path(i) for i in finalists], label, day, k,
                                           judge_boxes([by_path[i] for i in finalists], judge), final=True)
                     if not verdict.error and verdict.picks:

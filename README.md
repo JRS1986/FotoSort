@@ -106,7 +106,7 @@ after model load.
 ./fotosort.sh /path --recursive --with-sidecars  # include subfolders, bring RAW/XMP files along
 ./fotosort.sh /path --max-per-group 3
 ./fotosort.sh /path --labels my_labels.txt       # own subject list, one label per line
-./fotosort.sh /path --labels labels/whale_watching.txt --judge \
+./fotosort.sh /path --labels labels/whale_watching.txt --label-mode image --max-per-group 8 --judge \
     --judge-hint "Whale-watching trip: keepers show the animal itself (breach, fluke, back, dolphin above water), not just a blow or splash"
 ./fotosort.sh /path --blur-ratio 0               # keep soft bursts (e.g. the only leopard of the trip)
 ./fotosort.sh /path --judge --key-file ~/dev/TrendAnalysisClaude/secrets.yaml   # GPT makes the final call per group
@@ -125,6 +125,7 @@ after model load.
 | `--judge` / `--judge-provider` / `--judge-model` | off / openai / gpt-5.6-sol | let a vision model choose the final picks per group |
 | `--judge-detail` | high | image detail for the OpenAI judge (`low` is ~10x cheaper) |
 | `--judge-hint` | | a sentence or two about this shoot for the judge (what counts as a keeper) |
+| `--label-mode` | scene | `image` labels every frame on its own; use it on a boat or wherever the background never changes, so bursts do not merge into one giant group |
 | `--key-file` | | read the judge API key from a .env or YAML file |
 | `--detector` | yolov8m.pt | YOLOv8 weights (n is 3x faster, m is better on birds) |
 | `--aesthetic-weight` | 0.6 | aesthetics vs sharpness weight in the score |
