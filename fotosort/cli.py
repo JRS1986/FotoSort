@@ -308,12 +308,16 @@ def judge_boxes(photos: list[Photo], judge) -> dict[str, tuple | None]:
     det = getattr(judge, "detector", None)
     if det is None:
         return {}
-    smalls = []
+    smalls, kept = [], []
     for p in photos:
-        im = load_small(str(p.path))
+        try:
+            im = load_small(str(p.path))
+        except OSError:  # deleted while we were running
+            continue
         im.thumbnail((640, 640))
         smalls.append(im)
-    return {str(p.path): d["box"] for p, d in zip(photos, det.detect(smalls))}
+        kept.append(p)
+    return {str(p.path): d["box"] for p, d in zip(kept, det.detect(smalls))}
 
 
 def pick_budget(n_photos: int, base: int, extra_per: int) -> int:
@@ -348,6 +352,7 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                         by_path[dropped].judge_reason = f"= twin of {Path(kept_id).name}"
                 else:
                     rounds = [build_shortlist(sc, max(args.shortlist_max, 3 * k))]
+                rounds = [[i for i in r if Path(i).exists()] for r in rounds]  # user may delete files meanwhile
                 rounds = [r for r in rounds if r]
                 if not rounds:
                     continue
@@ -508,6 +513,7 @@ def move_picks(picks: list[Photo], root: Path, args, emb) -> int:
     op = shutil.copy2 if args.copy else shutil.move
     moved = 0
     new_paths: dict[str, Path] = {}
+    picks = [ph for ph in picks if ph.path.exists()]
     for ph in picks:
         targets = sidecars(ph.path) if args.with_sidecars else []
         if not enhanced_only:

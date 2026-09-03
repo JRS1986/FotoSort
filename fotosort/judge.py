@@ -151,9 +151,12 @@ class Judge:
 
     def judge(self, paths: list[Path], subject: str, day: str, k: int,
               boxes: dict[str, tuple | None] | None = None, final: bool = False) -> Verdict:
-        ids = [str(p) for p in paths]
-        images = []
+        ids, images = [], []
         for p in paths:
+            try:
+                frame = _jpeg_b64(p, 1024 if self.detail == "high" else 512)
+            except OSError:  # deleted while we were running: judge the rest
+                continue
             crop = None
             box = (boxes or {}).get(str(p))
             if box is not None:
@@ -161,7 +164,10 @@ class Judge:
                     crop = subject_crop(p, box)
                 except Exception:
                     crop = None
-            images.append((_jpeg_b64(p, 1024 if self.detail == "high" else 512), crop))
+            ids.append(str(p))
+            images.append((frame, crop))
+        if not ids:
+            return Verdict([], {}, error="all files vanished")
         template = FINAL_PROMPT if final else PROMPT
         prompt = template.format(n=len(paths), day=day, subject=subject, k=k)
         if self.hint:

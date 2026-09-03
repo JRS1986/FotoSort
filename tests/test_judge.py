@@ -40,3 +40,15 @@ def test_hint_is_prepended_to_the_prompt(monkeypatch, tmp_path):
     j._ask_openai = fake
     v = j.judge([tmp_path / "a.jpg"], "whale", "2026-09-03", 1)
     assert seen["prompt"].startswith("About this shoot: Whale trip") and v.picks
+
+
+def test_judge_skips_files_deleted_meanwhile(monkeypatch, tmp_path):
+    from fotosort.judge import Judge
+    from PIL import Image
+    Image.new("RGB", (64, 64), (10, 20, 30)).save(tmp_path / "a.jpg")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    j = Judge("openai")
+    j._ask_openai = lambda images, prompt: '{"picks": [{"photo": 1, "reason": "ok"}]}'
+    v = j.judge([tmp_path / "gone.jpg", tmp_path / "a.jpg"], "x", "d", 1)
+    assert v.picks == [str(tmp_path / "a.jpg")] and v.error is None
+    assert j.judge([tmp_path / "gone.jpg"], "x", "d", 1).error
