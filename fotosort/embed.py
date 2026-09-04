@@ -48,7 +48,13 @@ def _aesthetic_weights() -> Path:
     dst = CACHE_DIR / "aesthetic_l14.pth"
     if not dst.exists():
         print(f"Downloading aesthetic predictor weights to {dst} ...")
-        urllib.request.urlretrieve(AESTHETIC_URL, dst)
+        tmp = dst.with_suffix(".tmp")
+        try:
+            urllib.request.urlretrieve(AESTHETIC_URL, tmp)
+            os.replace(tmp, dst)
+        except Exception as e:
+            tmp.unlink(missing_ok=True)
+            raise SystemExit(f"Could not download {AESTHETIC_URL}: {e}") from e
     return dst
 
 

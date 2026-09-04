@@ -296,8 +296,11 @@ def save_like_original(out: Image.Image, original: Image.Image, dst: Path, quali
     kw = {}
     if original.info.get("exif"):
         kw["exif"] = original.info["exif"]
-    if original.info.get("icc_profile"):
+    if original.info.get("icc_profile") and original.mode == "RGB":
         kw["icc_profile"] = original.info["icc_profile"]
+    src = getattr(original, "filename", None)
+    if src and Path(src).resolve() == Path(dst).resolve():
+        raise SystemExit(f"Refusing to overwrite the original {src}; choose another --out folder")
     out.save(dst, "JPEG", quality=quality, optimize=True, **kw)
 
 

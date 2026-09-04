@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 
 
-@dataclass
+@dataclass(eq=False)
 class Candidate:
     id: str
     score: float
@@ -55,7 +55,7 @@ def select_day(
     return [c.id for c in picked]
 
 
-@dataclass
+@dataclass(eq=False)
 class ScenedCandidate(Candidate):
     scene: int = -1
 

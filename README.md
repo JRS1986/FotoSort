@@ -89,7 +89,7 @@ fotosort /path --copy --enhance                  # enhanced copies of the picks 
 fotosort /path --move                            # move originals into /path/Highlights
 fotosort /path --recursive --with-sidecars       # include subfolders, bring RAW/XMP files along
 fotosort /path --max-per-group 3                 # tighter selection
-fotosort /path --labels labels/whale_watching.txt --label-mode image --judge \
+fotosort /path --labels labels/whale_watching.txt --label-mode image --judge \   # label file from the checkout
     --judge-hint "Whale-watching trip: keepers show the animal itself, not just a blow or splash"
 fotosort /path --apply-report --copy --enhance   # re-apply (possibly hand-edited) report picks, no re-analysis
 fotosort enhance /any/folder                     # enhance any folder into <folder>/Enhanced
@@ -182,7 +182,7 @@ fotosort/
   quality.py  sharpness, exposure and thumbnail signature (PIL + numpy)
   embed.py    CLIP embeddings, aesthetic head, zero-shot labels, YOLO subject detection
   group.py    scene / burst clustering by time and similarity
-  select.py   score-based selection, judge shortlists and tournament chunking
+  selection.py  score-based selection, judge shortlists and tournament chunking
   judge.py    the vision-model judge (OpenAI / Anthropic), prompts and verdict parsing
   enhance.py  style detection and enhancement recipes, also the `enhance` subcommand
   scan.py     JPEG discovery, EXIF capture time, RAW/XMP sidecars

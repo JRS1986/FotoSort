@@ -29,8 +29,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-judge = ["openai>=1.50", "anthropic>=1.0"]
-dev = ["pytest>=8.0", "ruff>=0.5"]
+judge = ["openai>=1.50", "anthropic>=1.3"]
+dev = ["pytest>=8.0", "ruff>=0.5", "openai>=1.50"]
 
 [project.scripts]
 fotosort = "fotosort.__main__:main"

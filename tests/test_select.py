@@ -1,6 +1,6 @@
 import numpy as np
 
-from fotosort.select import Candidate, select_day
+from fotosort.selection import Candidate, select_day
 
 
 def _unit(v):
@@ -52,7 +52,7 @@ def test_empty():
 
 
 def test_shortlist_covers_every_scene_before_filling_by_score():
-    from fotosort.select import ScenedCandidate, build_shortlist
+    from fotosort.selection import ScenedCandidate, build_shortlist
     sig_a = _unit(np.arange(16, dtype=np.float32))
 
     def rnd(seed):
@@ -71,7 +71,7 @@ def test_shortlist_covers_every_scene_before_filling_by_score():
 
 
 def test_tournament_chunks_see_every_frame_once_and_balance_sizes():
-    from fotosort.select import ScenedCandidate, chunk_for_tournament
+    from fotosort.selection import ScenedCandidate, chunk_for_tournament
     rng = np.random.default_rng(5)
     cands = [ScenedCandidate(id=f"f{i}", score=rng.normal(), bucket="x", emb=_unit([1, 0]),
                              sig=_unit(rng.normal(size=16)), scene=i // 7) for i in range(50)]

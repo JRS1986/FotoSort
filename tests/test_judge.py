@@ -54,3 +54,12 @@ def test_judge_skips_files_deleted_meanwhile(monkeypatch, tmp_path):
     v = j.judge([tmp_path / "gone.jpg", tmp_path / "a.jpg"], "x", "d", 1)
     assert v.picks == [str(tmp_path / "a.jpg")] and v.error is None
     assert j.judge([tmp_path / "gone.jpg"], "x", "d", 1).error
+
+
+def test_judge_needs_a_key(monkeypatch):
+    import pytest
+
+    from fotosort.judge import Judge
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(SystemExit):
+        Judge("openai")

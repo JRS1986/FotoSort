@@ -140,6 +140,8 @@ class Judge:
         self.hint = hint.strip()  # extra guidance for this shoot, appended to every prompt
         self.usage = {"input": 0, "output": 0}
         key = read_key(provider, key_file)
+        if not key:
+            raise SystemExit(f"--judge needs an API key: set {KEY_NAMES[provider][0]} or pass --key-file")
         if provider == "openai":
             import openai  # slow import, keep local
 
@@ -169,12 +171,12 @@ class Judge:
         if not ids:
             return Verdict([], {}, error="all files vanished")
         template = FINAL_PROMPT if final else PROMPT
-        prompt = template.format(n=len(paths), day=day, subject=subject, k=k)
+        prompt = template.format(n=len(ids), day=day, subject=subject, k=k)
         if self.hint:
             prompt = f"About this shoot: {self.hint}\n\n{prompt}"
         verdict = self._judge(images, ids, prompt)
         if not final and not verdict.error and not verdict.picks and len(paths) >= 3:
-            second = self._judge(images, ids, RETRY_PROMPT.format(n=len(paths), day=day, subject=subject))
+            second = self._judge(images, ids, RETRY_PROMPT.format(n=len(ids), day=day, subject=subject))
             if not second.error and second.picks:
                 best = second.picks[0]
                 verdict = Verdict([best], {best: "(second look) " + second.reasons.get(best, "")})

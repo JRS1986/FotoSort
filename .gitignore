@@ -20,3 +20,6 @@ Enhanced/
 .fotosort_cache.npz
 fotosort_report.csv
 *.pt
+*.egg-info/
+build/
+dist/

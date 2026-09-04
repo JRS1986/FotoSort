@@ -95,3 +95,13 @@ def test_colour_photo_never_gets_black_and_white_style():
     assert detect_style(emb, style_emb, stats) == "wildlife"
     stats["chroma"] = 0.5
     assert detect_style(emb, style_emb, stats) == "black and white"
+
+
+def test_save_refuses_to_overwrite_the_original(tmp_path):
+    src = tmp_path / "in.jpg"
+    Image.fromarray(_gradient().astype(np.uint8)).save(src, "JPEG")
+    import pytest
+    with Image.open(src) as im:
+        out = enhance(im, "landscape", 1.0)
+        with pytest.raises(SystemExit):
+            save_like_original(out, im, src)

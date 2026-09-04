@@ -14,13 +14,18 @@ def cache_key(path: Path, root: Path) -> str:
     return f"{path.relative_to(root)}|{st.st_size}|{int(st.st_mtime)}"
 
 
-def load(root: Path) -> dict[str, dict]:
+def load(root: Path, detector: str = "") -> dict[str, dict]:
+    """Entries of the folder cache, or {} if it was written by another version
+    or with a different subject detector (its person/subject fields would be stale)."""
     p = root / CACHE_NAME
     if not p.exists():
         return {}
     try:
         z = np.load(p, allow_pickle=False)
         if "version" not in z or int(z["version"]) != CACHE_VERSION:
+            return {}
+        if detector and "detector" in z and str(z["detector"]) != detector:
+            print(f"Cache was built with detector {z['detector']!s}, now {detector}: recomputing")
             return {}
         keys = z["keys"]
         return {
@@ -41,13 +46,14 @@ def load(root: Path) -> dict[str, dict]:
         return {}
 
 
-def save(root: Path, entries: dict[str, dict]) -> None:
+def save(root: Path, entries: dict[str, dict], detector: str = "") -> None:
     if not entries:
         return
     keys = list(entries)
     np.savez(
         root / CACHE_NAME,
         version=np.array(CACHE_VERSION),
+        detector=np.array(detector),
         keys=np.array(keys),
         sig=np.stack([entries[k]["sig"] for k in keys]).astype(np.float32),
         person=np.array([entries[k]["person"] for k in keys], dtype=np.float32),

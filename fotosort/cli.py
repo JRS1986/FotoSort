@@ -20,7 +20,7 @@ from fotosort.judge import Verdict
 from fotosort.labels import bucket_name, load_labels
 from fotosort.quality import exposure, load_small, sharpness, signature, to_gray
 from fotosort.scan import capture_time, find_jpegs, sidecars
-from fotosort.select import Candidate, ScenedCandidate, build_shortlist, chunk_for_tournament, select_day
+from fotosort.selection import Candidate, ScenedCandidate, build_shortlist, chunk_for_tournament, select_day
 
 
 @dataclass
@@ -138,7 +138,8 @@ def _decode(photo: Photo, prepare):
 
 def compute_features(photos: list[Photo], root: Path, args):
     """Fill per-photo features (from cache or model) and return the Embedder."""
-    cached = {} if args.no_cache else cache_mod.load(root)
+    det_name = args.detector if args.person_area > 0 else "none"
+    cached = {} if args.no_cache else cache_mod.load(root, det_name)
     todo = []
     for ph in photos:
         c = cached.get(ph.key)
@@ -156,8 +157,8 @@ def compute_features(photos: list[Photo], root: Path, args):
     emb = Embedder()
     print(f"Running on {emb.device}")
 
+    detector = None
     if todo:
-        detector = None
         if args.person_area > 0:
             from fotosort.embed import SubjectDetector
 
@@ -170,21 +171,25 @@ def compute_features(photos: list[Photo], root: Path, args):
                 for p_, d_ in zip(batch, detector.detect(smalls), strict=True):
                     p_.person, p_.subject, p_.edge = d_["person"], d_["subject"], d_["edge"]
 
-        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        window = 4 * args.batch_size  # bounds how far the decoders run ahead of the GPU (memory)
+        with ThreadPoolExecutor(max_workers=args.workers) as pool, \
+                tqdm(total=len(todo), unit="img", desc="Analysing") as bar:
             batch, tensors, smalls = [], [], []
-            futures = pool.map(lambda ph: _decode(ph, emb.prepare), todo)
-            for ph, sh, ex, tensor, small in tqdm(futures, total=len(todo), unit="img", desc="Analysing"):
-                if sh is None:
-                    tqdm.write(f"Skipping {ph.path.name}: {ex}")
-                    ph.reject = "unreadable"
-                    continue
-                ph.sharpness, ph.clip_low, ph.clip_high, ph.mean = sh, ex["clip_low"], ex["clip_high"], ex["mean"]
-                batch.append(ph)
-                tensors.append(tensor)
-                smalls.append(small)
-                if len(batch) >= args.batch_size:
-                    flush(batch, tensors, smalls)
-                    batch, tensors, smalls = [], [], []
+            for start in range(0, len(todo), window):
+                chunk = todo[start:start + window]
+                for ph, sh, ex, tensor, small in pool.map(lambda ph: _decode(ph, emb.prepare), chunk):
+                    bar.update(1)
+                    if sh is None:
+                        tqdm.write(f"Skipping {ph.path.name}: {ex}")
+                        ph.reject = "unreadable"
+                        continue
+                    ph.sharpness, ph.clip_low, ph.clip_high, ph.mean = sh, ex["clip_low"], ex["clip_high"], ex["mean"]
+                    batch.append(ph)
+                    tensors.append(tensor)
+                    smalls.append(small)
+                    if len(batch) >= args.batch_size:
+                        flush(batch, tensors, smalls)
+                        batch, tensors, smalls = [], [], []
             if batch:
                 flush(batch, tensors, smalls)
         if not args.no_cache:
@@ -197,11 +202,14 @@ def compute_features(photos: list[Photo], root: Path, args):
                     "clip_low": ph.clip_low,
                     "clip_high": ph.clip_high, "mean": ph.mean,
                 }
-            cache_mod.save(root, cached)
+            cache_mod.save(root, cached, det_name)
 
-    all_emb = np.stack([ph.emb for ph in photos])
-    for ph, a in zip(photos, emb.aesthetic(all_emb), strict=True):
-        ph.aesthetic = float(a)
+    readable = [ph for ph in photos if ph.emb is not None]
+    if readable:
+        all_emb = np.stack([ph.emb for ph in readable])
+        for ph, a in zip(readable, emb.aesthetic(all_emb), strict=True):
+            ph.aesthetic = float(a)
+    emb.detector = detector if todo else None  # reused by the judge for subject crops
     return emb
 
 
@@ -218,7 +226,15 @@ def taste_bonus(photos: list[Photo], taste_dir: str, weight: float, emb) -> None
     if not refs:
         print(f"No JPEGs in --taste-dir {taste_dir}")
         return
-    ref_emb = emb.embed_batch([emb.prepare(load_small(str(r))) for r in refs])
+    tensors = []
+    for r in refs:
+        try:
+            tensors.append(emb.prepare(load_small(str(r))))
+        except OSError as e:
+            print(f"Skipping reference {r.name}: {e}")
+    if not tensors:
+        return
+    ref_emb = emb.embed_batch(tensors)
     for ph in photos:
         sim = float(np.max(ref_emb @ ph.emb))
         ph.score += weight * float(np.clip((sim - 0.6) / 0.3, 0.0, 1.0))
@@ -368,8 +384,14 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                     verdict = judge.judge([Path(i) for i in ids], label, day, kk, boxes)
                     if verdict.error:
                         tqdm.write(f"Judge failed for {day} {label} ({verdict.error}); using scores instead")
+                        judge.failures = getattr(judge, "failures", 0) + 1
+                        if judge.failures >= 3:
+                            raise SystemExit("The judge failed three times in a row; check the API key, model name "
+                                             "and network, or run without --judge.")
                         picks = sorted(ids, key=lambda i: by_path[i].score, reverse=True)[:kk]
                         verdict = Verdict(picks, {i: "(judge failed, by score)" for i in picks})
+                    else:
+                        judge.failures = 0
                     for i in verdict.picks[:kk]:
                         finalists.append(i)
                         by_path[i].judge_reason = verdict.reasons.get(i, "")
@@ -383,7 +405,10 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                         kk = min(k, max(2, -(-k * len(ids) // len(finalists)) + 1))
                         verdict = judge.judge([Path(i) for i in ids], label, day, kk,
                                               judge_boxes([by_path[i] for i in ids], judge), final=True)
-                        picks = verdict.picks[:kk] if not verdict.error and verdict.picks else ids[:kk]
+                        if verdict.error or not verdict.picks:
+                            picks = sorted(ids, key=lambda i: by_path[i].score, reverse=True)[:kk]
+                        else:
+                            picks = verdict.picks[:kk]
                         for i in picks:
                             by_path[i].judge_reason = verdict.reasons.get(i) or by_path[i].judge_reason
                         nxt += picks
@@ -474,8 +499,8 @@ def main(argv=None) -> int:
         from fotosort.judge import Judge
 
         judge = Judge(args.judge_provider, args.judge_model, args.key_file, args.judge_detail, args.judge_hint)
-        judge.detector = None
-        if args.person_area > 0:
+        judge.detector = getattr(emb, "detector", None)
+        if judge.detector is None and args.person_area > 0:
             from fotosort.embed import SubjectDetector
 
             judge.detector = SubjectDetector(device=emb.device, weights=args.detector)
