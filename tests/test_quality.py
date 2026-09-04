@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image, ImageFilter
 
-from fotosort.quality import sharpness, exposure, to_gray
+from fotosort.quality import exposure, sharpness, to_gray
 
 
 def _checker(size=256, cell=8):

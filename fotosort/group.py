@@ -1,13 +1,13 @@
 """Scene (burst) clustering: consecutive shots close in time and appearance."""
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
 
 def cluster_scenes(
-    times: Sequence[Optional[float]],
+    times: Sequence[float | None],
     emb: np.ndarray,
     gap_s: float = 120.0,
     sim_thresh: float = 0.85,
@@ -19,10 +19,10 @@ def cluster_scenes(
     `sim_thresh`. Embeddings must be L2-normalised."""
     ids: list[int] = []
     scene = -1
-    centroid: Optional[np.ndarray] = None
+    centroid: np.ndarray | None = None
     count = 0
-    prev_t: Optional[float] = None
-    for t, e in zip(times, emb):
+    prev_t: float | None = None
+    for t, e in zip(times, emb, strict=True):
         new = centroid is None
         if not new and t is not None and prev_t is not None and t - prev_t > gap_s:
             new = True

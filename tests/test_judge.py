@@ -27,8 +27,9 @@ def test_read_key_from_env_and_yaml_files(tmp_path, monkeypatch):
 
 
 def test_hint_is_prepended_to_the_prompt(monkeypatch, tmp_path):
-    from fotosort.judge import Judge
     from PIL import Image
+
+    from fotosort.judge import Judge
     Image.new("RGB", (64, 64), (10, 20, 30)).save(tmp_path / "a.jpg")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     j = Judge("openai", hint="Whale trip: blows are not keepers.")
@@ -43,8 +44,9 @@ def test_hint_is_prepended_to_the_prompt(monkeypatch, tmp_path):
 
 
 def test_judge_skips_files_deleted_meanwhile(monkeypatch, tmp_path):
-    from fotosort.judge import Judge
     from PIL import Image
+
+    from fotosort.judge import Judge
     Image.new("RGB", (64, 64), (10, 20, 30)).save(tmp_path / "a.jpg")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     j = Judge("openai")

@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      # The unit tests cover the pure-Python logic (scoring, grouping, selection,
+      # enhancement, report parsing) and do not need torch or the model weights.
+      - name: Install test dependencies
+        run: pip install pillow numpy tqdm openai pytest ruff
+      - name: Lint
+        run: ruff check fotosort tests
+      - name: Test
+        run: pytest -q

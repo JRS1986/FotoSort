@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from PIL import Image
 
@@ -30,7 +29,7 @@ def find_jpegs(root: Path, recursive: bool, exclude_dirs: set[str]) -> list[Path
     return sorted(out)
 
 
-def capture_time(path: Path) -> Optional[datetime]:
+def capture_time(path: Path) -> datetime | None:
     """EXIF DateTimeOriginal, falling back to DateTime, then file mtime."""
     try:
         with Image.open(path) as img:

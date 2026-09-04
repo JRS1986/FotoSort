@@ -1,6 +1,5 @@
-from pathlib import Path
 
-from fotosort.cli import _decode, Photo
+from fotosort.cli import Photo, _decode
 
 
 def test_decode_reports_error_instead_of_raising(tmp_path):

@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fotosort"
+version = "0.1.0"
+description = "Pick the best, most varied photos out of thousands of JPEGs: sharpness, CLIP aesthetics, subject detection, burst dedup, an optional vision-model judge, and style-aware enhancement."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Jan R. Seyler" }]
+keywords = ["photography", "culling", "clip", "aesthetics", "wildlife", "safari", "burst"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Multimedia :: Graphics",
+]
+dependencies = [
+    "torch>=2.4",
+    "open_clip_torch>=2.26",
+    "ultralytics>=8.3",
+    "pillow>=10.0",
+    "numpy>=1.26",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+judge = ["openai>=1.50", "anthropic>=1.0"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+fotosort = "fotosort.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/JRS1986/FotoSort"
+Issues = "https://github.com/JRS1986/FotoSort/issues"
+
+[tool.setuptools]
+packages = ["fotosort"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -83,7 +83,7 @@ class Embedder:
 
     @torch.no_grad()
     def text_embeddings(self, labels: list[str], template: str = "a photo of a {}") -> np.ndarray:
-        tokens = self.tokenizer([template.format(l) for l in labels]).to(self.device)
+        tokens = self.tokenizer([template.format(label) for label in labels]).to(self.device)
         t = self.model.encode_text(tokens).float()
         t = t / t.norm(dim=-1, keepdim=True)
         return t.cpu().numpy().astype(np.float32)

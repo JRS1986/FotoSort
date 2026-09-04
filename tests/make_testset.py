@@ -50,8 +50,10 @@ def main(out: Path):
                 save(img, out / f"IMG_{n:04d}.jpg", f"{day} {tmpl % i}")
                 n += 1
     # one very dark frame and one blown-out frame
-    save(Image.new("RGB", (1200, 800), (2, 2, 2)), out / f"IMG_{n:04d}.jpg", "2026:09:02 18:00:00"); n += 1
-    save(Image.new("RGB", (1200, 800), (254, 254, 254)), out / f"IMG_{n:04d}.jpg", "2026:09:02 18:00:01"); n += 1
+    save(Image.new("RGB", (1200, 800), (2, 2, 2)), out / f"IMG_{n:04d}.jpg", "2026:09:02 18:00:00")
+    n += 1
+    save(Image.new("RGB", (1200, 800), (254, 254, 254)), out / f"IMG_{n:04d}.jpg", "2026:09:02 18:00:01")
+    n += 1
     print(f"wrote {n} images to {out}")
 
 

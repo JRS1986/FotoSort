@@ -2,8 +2,15 @@ import numpy as np
 from PIL import Image
 
 from fotosort.enhance import (
-    STYLES, RECIPES, enhance, image_stats, auto_levels, vibrance, tone_curve,
-    save_like_original, detect_style_from_stats,
+    RECIPES,
+    STYLES,
+    auto_levels,
+    detect_style_from_stats,
+    enhance,
+    image_stats,
+    save_like_original,
+    tone_curve,
+    vibrance,
 )
 
 
@@ -79,7 +86,7 @@ def test_save_preserves_exif(tmp_path):
 
 
 def test_colour_photo_never_gets_black_and_white_style():
-    from fotosort.enhance import detect_style, STYLES
+    from fotosort.enhance import STYLES, detect_style
     stats = {"chroma": 25.0, "mean": 120.0, "warmth": 5.0, "std": 50.0, "dark_frac": 0.1}
     style_emb = np.eye(len(STYLES), dtype=np.float32)
     emb = np.zeros(len(STYLES), dtype=np.float32)

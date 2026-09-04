@@ -16,6 +16,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from PIL import Image
+
+from fotosort.quality import load_small
+
 DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "anthropic": "claude-opus-5"}
 KEY_NAMES = {"openai": ("OPENAI_API_KEY", "openai_api_key"), "anthropic": ("ANTHROPIC_API_KEY", "anthropic_api_key")}
 
@@ -30,10 +34,6 @@ def read_key(provider: str, key_file: str | None) -> str | None:
                 return m.group(2).strip().strip("'\"")
         raise SystemExit(f"No {names[0]} in {key_file}")
     return os.environ.get(names[0])
-
-from PIL import Image
-
-from fotosort.quality import load_small
 
 SYSTEM = (
     "You are a professional photo editor culling a travel and wildlife shoot for a family album. "
@@ -176,12 +176,14 @@ class Judge:
         if not final and not verdict.error and not verdict.picks and len(paths) >= 3:
             second = self._judge(images, ids, RETRY_PROMPT.format(n=len(paths), day=day, subject=subject))
             if not second.error and second.picks:
-                verdict = Verdict(second.picks[:1], {i: "(second look) " + second.reasons.get(i, "") for i in second.picks[:1]})
+                best = second.picks[0]
+                verdict = Verdict([best], {best: "(second look) " + second.reasons.get(best, "")})
         return verdict
 
     def _judge(self, images, ids, prompt) -> Verdict:
         try:
-            text = self._ask_openai(images, prompt) if self.provider == "openai" else self._ask_anthropic(images, prompt)
+            ask = self._ask_openai if self.provider == "openai" else self._ask_anthropic
+            text = ask(images, prompt)
         except Exception as e:  # auth, network, rate limit after SDK retries
             return Verdict([], {}, error=f"{type(e).__name__}: {e}")
         if text is None:
@@ -192,10 +194,12 @@ class Judge:
         content = []
         for i, (b64, crop) in enumerate(images, 1):
             content.append({"type": "text", "text": f"Photo {i}"})
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": self.detail}})
+            content.append({"type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": self.detail}})
             if crop:
                 content.append({"type": "text", "text": f"Photo {i}, 100% crop of the subject"})
-                content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{crop}", "detail": "low"}})
+                content.append({"type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{crop}", "detail": "low"}})
         content.append({"type": "text", "text": prompt})
         resp = self.client.chat.completions.create(
             model=self.model,
@@ -215,7 +219,8 @@ class Judge:
             content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
             if crop:
                 content.append({"type": "text", "text": f"Photo {i}, 100% crop of the subject"})
-                content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": crop}})
+                content.append({"type": "image",
+                                "source": {"type": "base64", "media_type": "image/jpeg", "data": crop}})
         content.append({"type": "text", "text": prompt})
         resp = self.client.beta.messages.create(
             model=self.model,

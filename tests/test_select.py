@@ -1,6 +1,6 @@
 import numpy as np
 
-from fotosort.select import select_day, Candidate
+from fotosort.select import Candidate, select_day
 
 
 def _unit(v):
@@ -41,7 +41,8 @@ def test_pixel_signature_catches_semantically_different_duplicates():
     cands = [
         Candidate(id="p1", score=0.9, bucket="x", emb=_unit([1, 0, 0]), sig=sig),
         Candidate(id="p2", score=0.8, bucket="x", emb=_unit([0, 1, 0]), sig=sig),
-        Candidate(id="p3", score=0.7, bucket="x", emb=_unit([0, 0, 1]), sig=_unit(np.random.default_rng(1).normal(size=16))),
+        Candidate(id="p3", score=0.7, bucket="x", emb=_unit([0, 0, 1]),
+                  sig=_unit(np.random.default_rng(1).normal(size=16))),
     ]
     assert select_day(cands, {"x": 3}, 0.95, 0.9) == ["p1", "p3"]
 
@@ -53,12 +54,16 @@ def test_empty():
 def test_shortlist_covers_every_scene_before_filling_by_score():
     from fotosort.select import ScenedCandidate, build_shortlist
     sig_a = _unit(np.arange(16, dtype=np.float32))
+
+    def rnd(seed):
+        return _unit(np.random.default_rng(seed).normal(size=16))
+
     cands = [
         ScenedCandidate(id="s0a", score=0.9, bucket="x", emb=_unit([1, 0]), sig=sig_a, scene=0),
         ScenedCandidate(id="s0b", score=0.8, bucket="x", emb=_unit([1, 0]), sig=sig_a, scene=0),  # pixel twin of s0a
-        ScenedCandidate(id="s0c", score=0.7, bucket="x", emb=_unit([1, 0.1]), sig=_unit(np.random.default_rng(2).normal(size=16)), scene=0),
-        ScenedCandidate(id="s1a", score=0.1, bucket="x", emb=_unit([1, 0.05]), sig=_unit(np.random.default_rng(3).normal(size=16)), scene=1),
-        ScenedCandidate(id="s2a", score=-0.9, bucket="x", emb=_unit([0, 1]), sig=_unit(np.random.default_rng(4).normal(size=16)), scene=2),
+        ScenedCandidate(id="s0c", score=0.7, bucket="x", emb=_unit([1, 0.1]), sig=rnd(2), scene=0),
+        ScenedCandidate(id="s1a", score=0.1, bucket="x", emb=_unit([1, 0.05]), sig=rnd(3), scene=1),
+        ScenedCandidate(id="s2a", score=-0.9, bucket="x", emb=_unit([0, 1]), sig=rnd(4), scene=2),
     ]
     # scene coverage first (s0a, s1a, s2a), then fill (s0c); pixel twin s0b never
     assert build_shortlist(cands, cap=4) == ["s0a", "s1a", "s2a", "s0c"]

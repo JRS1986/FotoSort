@@ -21,8 +21,9 @@ def test_small_subject_at_frame_edge_is_penalised_but_large_one_is_not():
 
 def test_taste_bonus_rewards_similar_frames(tmp_path, capsys):
     import numpy as np
-    from fotosort.cli import taste_bonus
     from PIL import Image
+
+    from fotosort.cli import taste_bonus
     Image.new("RGB", (64, 64), (200, 30, 30)).save(tmp_path / "fav.jpg")
 
     class FakeEmb:

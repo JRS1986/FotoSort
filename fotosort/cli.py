@@ -7,19 +7,18 @@ import shutil
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from tqdm import tqdm
 
 from fotosort import cache as cache_mod
 from fotosort.group import cluster_scenes
+from fotosort.judge import Verdict
 from fotosort.labels import bucket_name, load_labels
 from fotosort.quality import exposure, load_small, sharpness, signature, to_gray
-from fotosort.judge import Verdict
 from fotosort.scan import capture_time, find_jpegs, sidecars
 from fotosort.select import Candidate, ScenedCandidate, build_shortlist, chunk_for_tournament, select_day
 
@@ -28,9 +27,9 @@ from fotosort.select import Candidate, ScenedCandidate, build_shortlist, chunk_f
 class Photo:
     path: Path
     key: str
-    time: Optional[datetime] = None
-    emb: Optional[np.ndarray] = None
-    sig: Optional[np.ndarray] = None
+    time: datetime | None = None
+    emb: np.ndarray | None = None
+    sig: np.ndarray | None = None
     person: float = 0.0  # largest detected person box, fraction of frame
     subject: float = 0.0  # largest detected person/animal box, fraction of frame
     edge: bool = False  # that box touches the frame border
@@ -70,8 +69,10 @@ def parse_args(argv=None):
                    help="One extra pick per this many photos in a group (0 = off); total capped at 3x --max-per-group")
     p.add_argument("--gap-seconds", type=float, default=120, help="Time gap that starts a new scene/burst")
     p.add_argument("--scene-sim", type=float, default=0.80, help="Min similarity to stay in the same scene")
-    p.add_argument("--dup-sim", type=float, default=0.95, help="CLIP similarity above which two picks are near-duplicates")
-    p.add_argument("--dup-pixel", type=float, default=0.90, help="Thumbnail correlation above which two picks are near-duplicates")
+    p.add_argument("--dup-sim", type=float, default=0.95,
+                   help="CLIP similarity above which two picks are near-duplicates")
+    p.add_argument("--dup-pixel", type=float, default=0.90,
+                   help="Thumbnail correlation above which two picks are near-duplicates")
     p.add_argument("--min-score", type=float, default=-0.5, help="Never pick a photo scoring below this")
     p.add_argument("--subject-weight", type=float, default=0.4, help="Bonus weight for a large detected subject")
     p.add_argument("--judge", action="store_true",
@@ -163,10 +164,10 @@ def compute_features(photos: list[Photo], root: Path, args):
             detector = SubjectDetector(device=emb.device, weights=args.detector)
 
         def flush(batch, tensors, smalls):
-            for p_, e_ in zip(batch, emb.embed_batch(tensors)):
+            for p_, e_ in zip(batch, emb.embed_batch(tensors), strict=True):
                 p_.emb = e_
             if detector is not None:
-                for p_, d_ in zip(batch, detector.detect(smalls)):
+                for p_, d_ in zip(batch, detector.detect(smalls), strict=True):
                     p_.person, p_.subject, p_.edge = d_["person"], d_["subject"], d_["edge"]
 
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -199,7 +200,7 @@ def compute_features(photos: list[Photo], root: Path, args):
             cache_mod.save(root, cached)
 
     all_emb = np.stack([ph.emb for ph in photos])
-    for ph, a in zip(photos, emb.aesthetic(all_emb)):
+    for ph, a in zip(photos, emb.aesthetic(all_emb), strict=True):
         ph.aesthetic = float(a)
     return emb
 
@@ -273,12 +274,12 @@ def assign_scenes_and_labels(photos: list[Photo], text_emb: np.ndarray, labels: 
         times = [p.time.timestamp() if p.time else None for p in group]
         emb = np.stack([p.emb for p in group])
         ids = cluster_scenes(times, emb, args.gap_seconds, args.scene_sim)
-        for p, s in zip(group, ids):
+        for p, s in zip(group, ids, strict=True):
             p.scene = offset + s
         offset += max(ids) + 1
     if args.label_mode == "image":
         names, probs = classify(np.stack([p.emb for p in photos]), text_emb, labels)
-        for p, n, pr in zip(photos, names, probs):
+        for p, n, pr in zip(photos, names, probs, strict=True):
             p.label, p.label_prob = bucket_name(n), float(pr)
     else:
         scenes: dict[int, list[Photo]] = defaultdict(list)
@@ -288,7 +289,7 @@ def assign_scenes_and_labels(photos: list[Photo], text_emb: np.ndarray, labels: 
         means = np.stack([np.mean([p.emb for p in scenes[s]], axis=0) for s in scene_ids])
         means /= np.linalg.norm(means, axis=1, keepdims=True) + 1e-9
         names, probs = classify(means, text_emb, labels)
-        for s, n, pr in zip(scene_ids, names, probs):
+        for s, n, pr in zip(scene_ids, names, probs, strict=True):
             for p in scenes[s]:
                 p.label, p.label_prob = bucket_name(n), float(pr)
     apply_person_override(photos, args.person_area)
@@ -317,7 +318,7 @@ def judge_boxes(photos: list[Photo], judge) -> dict[str, tuple | None]:
         im.thumbnail((640, 640))
         smalls.append(im)
         kept.append(p)
-    return {str(p.path): d["box"] for p, d in zip(kept, det.detect(smalls))}
+    return {str(p.path): d["box"] for p, d in zip(kept, det.detect(smalls), strict=True)}
 
 
 def pick_budget(n_photos: int, base: int, extra_per: int) -> int:
@@ -363,7 +364,8 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                         by_path[i].shortlisted = True
                     # each chunk may send on its share of the budget, at least 2, so a strong burst is not capped early
                     kk = k if len(rounds) == 1 else min(k, max(2, -(-k * len(ids) // n_total) + 1))
-                    verdict = judge.judge([Path(i) for i in ids], label, day, kk, judge_boxes([by_path[i] for i in ids], judge))
+                    boxes = judge_boxes([by_path[i] for i in ids], judge)
+                    verdict = judge.judge([Path(i) for i in ids], label, day, kk, boxes)
                     if verdict.error:
                         tqdm.write(f"Judge failed for {day} {label} ({verdict.error}); using scores instead")
                         picks = sorted(ids, key=lambda i: by_path[i].score, reverse=True)[:kk]
@@ -542,7 +544,8 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
     if not report.exists():
         print(f"No report at {report}; run without --apply-report first.", file=sys.stderr)
         return 2
-    rows = {r["file"]: r for r in csv.DictReader(open(report))}
+    with open(report, newline="") as f:
+        rows = {r["file"]: r for r in csv.DictReader(f)}
     picks = []
     for ph in photos:
         r = rows.get(str(ph.path))
@@ -573,7 +576,9 @@ def enhance_picks(picks: list[Photo], sources: dict[str, Path], enh_dir: Path, e
     """Enhance each pick from `sources[original path]` into `namer(src)`."""
     from fotosort.enhance import STYLE_PROMPTS, detect_style, enhance_file, image_stats
 
-    style_emb = None if (args.enhance_style or emb is None) else emb.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
+    style_emb = None
+    if not args.enhance_style and emb is not None:
+        style_emb = emb.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
     enh_dir.mkdir(parents=True, exist_ok=True)
     styles = defaultdict(int)
     for ph in tqdm(picks, unit="img", desc="Enhancing"):

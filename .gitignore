@@ -5,7 +5,6 @@ __pycache__/
 
 # Photos and tool output never belong in the repo
 .DS_Store
-SuedAfrika/
 *.jpg
 *.jpeg
 *.JPG

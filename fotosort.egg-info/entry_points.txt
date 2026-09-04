@@ -1,0 +1,2 @@
+[console_scripts]
+fotosort = fotosort.__main__:main
