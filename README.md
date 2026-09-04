@@ -119,12 +119,18 @@ works: Ollama, LM Studio, vLLM, an MLX server. With Ollama:
 
 ```bash
 ollama pull qwen3-vl:8b
-fotosort /path --judge --judge-base-url http://localhost:11434/v1 --judge-model qwen3-vl:8b
+printf 'FROM qwen3-vl:8b\nPARAMETER num_ctx 16384\n' > Modelfile && ollama create qwen3-vl-judge -f Modelfile
+fotosort /path --judge --judge-base-url http://localhost:11434/v1 --judge-model qwen3-vl-judge \
+    --judge-detail low --judge-chunk 6
 ```
 
-No key is needed. Local models are slower and less discerning than the
-frontier ones, so expect a full-coverage run over 2,000 frames to take an hour
-or two on an Apple-silicon Mac; `--judge-coverage shortlist` helps.
+No key is needed. The `ollama create` step matters: Ollama loads the model
+with its full 262k context by default, which spills most of it to the CPU and
+makes each request take minutes; a 16k context fits the GPU. Local models are
+slower and less discerning than the frontier ones, so keep chunks small
+(`--judge-chunk 6`), send frames at low detail, and consider
+`--judge-coverage shortlist`. Expect several seconds per frame on an
+Apple-silicon Mac.
 
 With a cloud provider, the judge sends downsized JPEGs (and subject crops) of
 every distinct frame to the provider's API. Do not use it on photos you must
