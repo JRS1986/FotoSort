@@ -204,6 +204,12 @@ python tests/make_testset.py /tmp/testset && fotosort /tmp/testset
 The unit tests cover the pure logic (metrics, grouping, selection, enhancement,
 report parsing) and run without the model weights, so CI needs no GPU.
 
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for setup, conventions and what makes a useful bug report for a culling tool,
+and [CHANGELOG.md](CHANGELOG.md) for what has changed and what is planned.
+
 ## Credits
 
 - [OpenAI CLIP](https://github.com/openai/CLIP) via [open_clip](https://github.com/mlfoundations/open_clip)
