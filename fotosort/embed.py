@@ -95,6 +95,30 @@ class Embedder:
         return t.cpu().numpy().astype(np.float32)
 
 
+class DinoEmbedder:
+    """DINOv2-small embeddings for near-duplicate detection. Unlike CLIP, which is
+    semantic (two different poses of one animal score 0.95), DINOv2 measures
+    visual sameness: burst twins score above 0.9, different compositions of the
+    same subject mostly below 0.8. Runs at 224 px, ~5 ms per image on Apple GPU."""
+
+    def __init__(self, device: str | None = None):
+        import timm  # already a dependency of open_clip
+
+        self.device = device or pick_device()
+        self.model = timm.create_model("vit_small_patch14_dinov2.lvd142m", pretrained=True,
+                                       num_classes=0, img_size=224).eval().to(self.device)
+        cfg = timm.data.resolve_data_config({}, model=self.model)
+        self.transform = timm.data.create_transform(input_size=(3, 224, 224), interpolation="bicubic",
+                                                    mean=cfg["mean"], std=cfg["std"], crop_pct=1.0)
+
+    @torch.no_grad()
+    def embed_batch(self, images: list[Image.Image]) -> np.ndarray:
+        x = torch.stack([self.transform(im.convert("RGB")) for im in images]).to(self.device)
+        f = self.model(x).float()
+        f = f / f.norm(dim=-1, keepdim=True)
+        return f.cpu().numpy().astype(np.float32)
+
+
 SUBJECT_CLASSES = {"person", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"}
 
 

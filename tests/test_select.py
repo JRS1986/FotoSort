@@ -85,3 +85,16 @@ def test_tournament_chunks_see_every_frame_once_and_balance_sizes():
     lo, hi = sorted([cands[0], cands[1]], key=lambda c: c.score)
     chunks, twins = chunk_for_tournament(cands, chunk=24)
     assert twins == {lo.id: hi.id} and lo.id not in [i for ch in chunks for i in ch]
+
+
+def test_dino_similarity_decides_duplicates_when_available():
+    from fotosort.selection import is_duplicate
+    # CLIP says identical, DINOv2 says different -> not a duplicate; and vice versa
+    a = Candidate(id="a", score=1, bucket="x", emb=_unit([1, 0]), dino=_unit([1, 0]))
+    b = Candidate(id="b", score=1, bucket="x", emb=_unit([1, 0]), dino=_unit([0, 1]))
+    c = Candidate(id="c", score=1, bucket="x", emb=_unit([0, 1]), dino=_unit([1, 0.01]))
+    assert not is_duplicate(b, [a], 0.92, 0.9)
+    assert is_duplicate(c, [a], 0.92, 0.9)
+    # without DINOv2 embeddings the CLIP embedding is used
+    d = Candidate(id="d", score=1, bucket="x", emb=_unit([1, 0.01]))
+    assert is_duplicate(d, [Candidate(id="e", score=1, bucket="x", emb=_unit([1, 0]))], 0.92, 0.9)

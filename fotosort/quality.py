@@ -1,17 +1,78 @@
 """Technical quality metrics: sharpness and exposure. Pure PIL + numpy."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 from PIL import Image, ImageOps
 
 MAX_SIDE = 1024
 
 
-def load_small(path: str, max_side: int = MAX_SIDE) -> Image.Image:
-    """Decode a JPEG at reduced resolution (DCT scaling), so it is ~5-10x faster
-    than a full decode. Applies the EXIF orientation."""
+RAW_SUFFIXES = {".cr2", ".cr3", ".nef", ".nrw", ".arw", ".raf", ".orf", ".rw2", ".dng", ".pef", ".srw", ".raw"}
+
+
+def _raw_preview(path: str) -> Image.Image:
+    """The camera's embedded JPEG preview of a RAW file (fast, usually near full size)."""
+    import io
+
+    import rawpy
+
+    with rawpy.imread(path) as raw:
+        thumb = raw.extract_thumb()
+        if thumb.format == rawpy.ThumbFormat.JPEG:
+            return Image.open(io.BytesIO(thumb.data))
+        return Image.fromarray(thumb.data)
+
+
+def _raw_exif_bytes(path: str) -> bytes | None:
+    """A minimal EXIF block (camera make/model, capture time) read from a RAW
+    file, so a JPEG derived from it still sorts by date in an album."""
+    try:
+        import exifread
+
+        with open(path, "rb") as f:
+            tags = exifread.process_file(f, details=False)
+        exif = Image.Exif()
+        for tag, key in ((0x010F, "Image Make"), (0x0110, "Image Model")):
+            if key in tags:
+                exif[tag] = str(tags[key]).strip()
+        when = tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime")
+        if when:
+            exif[306] = str(when)
+            exif.get_ifd(0x8769)[36867] = str(when)
+        return exif.tobytes() if len(exif) else None
+    except Exception:
+        return None
+
+
+def open_full(path: str) -> Image.Image:
+    """Full-resolution RGB image: a JPEG as is, a RAW demosaiced with camera white
+    balance and no auto-brightening (the enhancer does the tone work). A RAW's
+    result carries a minimal EXIF (camera, capture time) in `info["exif"]`."""
+    if Path(path).suffix.lower() in RAW_SUFFIXES:
+        import rawpy
+
+        with rawpy.imread(path) as raw:
+            rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=8)
+        img = Image.fromarray(rgb)
+        exif = _raw_exif_bytes(path)
+        if exif:
+            img.info["exif"] = exif
+        return img
     img = Image.open(path)
-    img.draft("RGB", (max_side, max_side))
+    img.load()
+    return img
+
+
+def load_small(path: str, max_side: int = MAX_SIDE) -> Image.Image:
+    """Decode at reduced resolution: JPEGs via DCT scaling (~5-10x faster than a
+    full decode), RAW files via their embedded preview. Applies EXIF orientation."""
+    if Path(path).suffix.lower() in RAW_SUFFIXES:
+        img = _raw_preview(path)
+    else:
+        img = Image.open(path)
+        img.draft("RGB", (max_side, max_side))
     img = img.convert("RGB")
     img = ImageOps.exif_transpose(img)
     img.thumbnail((max_side, max_side), Image.Resampling.BILINEAR)

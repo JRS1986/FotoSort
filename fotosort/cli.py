@@ -19,7 +19,7 @@ from fotosort.group import cluster_scenes
 from fotosort.judge import Verdict
 from fotosort.labels import bucket_name, load_labels
 from fotosort.quality import exposure, load_small, sharpness, signature, to_gray
-from fotosort.scan import capture_time, find_jpegs, sidecars
+from fotosort.scan import capture_time, find_images, is_raw, sidecars
 from fotosort.selection import Candidate, ScenedCandidate, build_shortlist, chunk_for_tournament, select_day
 
 
@@ -30,6 +30,7 @@ class Photo:
     time: datetime | None = None
     emb: np.ndarray | None = None
     sig: np.ndarray | None = None
+    dino: np.ndarray | None = None
     person: float = 0.0  # largest detected person box, fraction of frame
     subject: float = 0.0  # largest detected person/animal box, fraction of frame
     edge: bool = False  # that box touches the frame border
@@ -64,13 +65,16 @@ def parse_args(argv=None):
     g.add_argument("--copy", action="store_true", help="Copy picks into Highlights instead of moving")
     p.add_argument("--highlights", default="Highlights", help="Name of the output subfolder")
     p.add_argument("--recursive", action="store_true", help="Also scan subfolders")
+    p.add_argument("--no-raw", action="store_true",
+                   help="Ignore RAW files (by default RAW files without a same-named JPEG are analysed via "
+                        "their embedded preview)")
     p.add_argument("--max-per-group", type=int, default=5, help="Base number of picks per subject per day")
     p.add_argument("--extra-per", type=int, default=40,
                    help="One extra pick per this many photos in a group (0 = off); total capped at 3x --max-per-group")
     p.add_argument("--gap-seconds", type=float, default=120, help="Time gap that starts a new scene/burst")
     p.add_argument("--scene-sim", type=float, default=0.80, help="Min similarity to stay in the same scene")
-    p.add_argument("--dup-sim", type=float, default=0.95,
-                   help="CLIP similarity above which two picks are near-duplicates")
+    p.add_argument("--dup-sim", type=float, default=0.89,
+                   help="DINOv2 similarity above which two picks are near-duplicates")
     p.add_argument("--dup-pixel", type=float, default=0.90,
                    help="Thumbnail correlation above which two picks are near-duplicates")
     p.add_argument("--min-score", type=float, default=-0.5, help="Never pick a photo scoring below this")
@@ -92,6 +96,14 @@ def parse_args(argv=None):
     p.add_argument("--judge-detail", default="high", choices=["high", "low"],
                    help="Image detail sent to the OpenAI judge: high judges sharpness and faces, low is ~10x cheaper")
     p.add_argument("--key-file", help="File holding the API key (a .env or YAML line), instead of the environment")
+    p.add_argument("--judge-base-url",
+                   help="OpenAI-compatible server for a local judge, e.g. http://localhost:11434/v1 (Ollama); "
+                        "requires --judge-model; no key or upload needed")
+    p.add_argument("--xmp", choices=["picks", "all"],
+                   help="Write XMP sidecars next to the originals: rating 5 + keywords for picks (and, with "
+                        "'all', rating 3 for judged-but-not-picked, 1 for rejected frames); existing sidecars "
+                        "are left alone unless --xmp-overwrite")
+    p.add_argument("--xmp-overwrite", action="store_true", help="Replace existing .xmp sidecars")
     p.add_argument("--detector", default="yolov8m.pt", help="YOLOv8 weights for subject detection (n/s/m/l)")
     p.add_argument("--aesthetic-weight", type=float, default=0.6, help="Weight of aesthetics vs sharpness (0..1)")
     p.add_argument("--blur-ratio", type=float, default=0.15, help="Reject if sharpness < ratio * day median")
@@ -144,7 +156,8 @@ def compute_features(photos: list[Photo], root: Path, args):
     for ph in photos:
         c = cached.get(ph.key)
         if c is not None:
-            ph.emb, ph.sig, ph.person, ph.sharpness = c["emb"], c["sig"], c["person"], c["sharpness"]
+            ph.emb, ph.sig, ph.dino = c["emb"], c["sig"], c["dino"]
+            ph.person, ph.sharpness = c["person"], c["sharpness"]
             ph.subject, ph.edge = c["subject"], c["edge"]
             ph.clip_low, ph.clip_high, ph.mean = c["clip_low"], c["clip_high"], c["mean"]
         else:
@@ -164,9 +177,15 @@ def compute_features(photos: list[Photo], root: Path, args):
 
             detector = SubjectDetector(device=emb.device, weights=args.detector)
 
+        from fotosort.embed import DinoEmbedder
+
+        dino = DinoEmbedder(device=emb.device)
+
         def flush(batch, tensors, smalls):
             for p_, e_ in zip(batch, emb.embed_batch(tensors), strict=True):
                 p_.emb = e_
+            for p_, d_ in zip(batch, dino.embed_batch(smalls), strict=True):
+                p_.dino = d_
             if detector is not None:
                 for p_, d_ in zip(batch, detector.detect(smalls), strict=True):
                     p_.person, p_.subject, p_.edge = d_["person"], d_["subject"], d_["edge"]
@@ -197,7 +216,8 @@ def compute_features(photos: list[Photo], root: Path, args):
                 if ph.emb is None:
                     continue
                 cached[ph.key] = {
-                    "emb": ph.emb, "sig": ph.sig, "person": ph.person, "subject": ph.subject, "edge": ph.edge,
+                    "emb": ph.emb, "sig": ph.sig, "dino": ph.dino,
+                    "person": ph.person, "subject": ph.subject, "edge": ph.edge,
                     "sharpness": ph.sharpness,
                     "clip_low": ph.clip_low,
                     "clip_high": ph.clip_high, "mean": ph.mean,
@@ -222,7 +242,7 @@ def taste_bonus(photos: list[Photo], taste_dir: str, weight: float, emb) -> None
     """Score bonus for resembling the user's own favourites: CLIP similarity to
     the closest reference photo, mapped from 0.6 (unrelated) to 0.9 (same kind
     of shot) onto 0..weight. Adds to score before selection and shortlisting."""
-    refs = find_jpegs(Path(taste_dir).expanduser().resolve(), recursive=False, exclude_dirs=set())
+    refs = find_images(Path(taste_dir).expanduser().resolve(), recursive=False, exclude_dirs=set())
     if not refs:
         print(f"No JPEGs in --taste-dir {taste_dir}")
         return
@@ -354,7 +374,7 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
         day_buckets = {label: group for (d, label), group in buckets.items() if d == day}
         budgets = {label: pick_budget(sum(1 for p in g if not p.reject), args.max_per_group, args.extra_per)
                    for label, g in day_buckets.items()}
-        cands = [Candidate(str(p.path), p.score, p.label, p.emb, p.sig)
+        cands = [Candidate(str(p.path), p.score, p.label, p.emb, p.sig, p.dino)
                  for g in day_buckets.values() for p in g if not p.reject]
         if judge is None:
             chosen = set(select_day(cands, budgets, args.dup_sim, args.dup_pixel, args.min_score))
@@ -362,7 +382,7 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
             chosen = set()
             for label, k in budgets.items():
                 group = [p for p in day_buckets[label] if not p.reject]
-                sc = [ScenedCandidate(str(p.path), p.score, p.label, p.emb, p.sig, p.scene) for p in group]
+                sc = [ScenedCandidate(str(p.path), p.score, p.label, p.emb, p.sig, p.dino, p.scene) for p in group]
                 if args.judge_coverage == "full":
                     rounds, twins = chunk_for_tournament(sc, args.judge_chunk)
                     for dropped, kept_id in twins.items():
@@ -446,6 +466,33 @@ def write_report(photos: list[Photo], path: Path) -> None:
             ])
 
 
+def write_sidecars(photos: list[Photo], args) -> None:
+    from fotosort.xmp import write_sidecar
+
+    written = skipped = 0
+    for ph in photos:
+        if ph.selected:
+            rating, label = 5, "Green"
+        elif args.xmp == "all" and ph.reject:
+            rating, label = 1, "Red"
+        elif args.xmp == "all" and ph.shortlisted:
+            rating, label = 3, ""
+        elif args.xmp == "all":
+            rating, label = 0, ""
+        else:
+            continue
+        keywords = ["FotoSort", f"FotoSort|{ph.label}"] + (["FotoSort|Pick"] if ph.selected else [])
+        try:
+            ok = write_sidecar(ph.path, rating, keywords, ph.judge_reason if ph.selected else "", label,
+                               overwrite=args.xmp_overwrite)
+        except OSError as e:
+            tqdm.write(f"Could not write sidecar for {ph.path.name}: {e}")
+            continue
+        written += ok
+        skipped += not ok
+    print(f"XMP sidecars: {written} written" + (f", {skipped} existing left untouched" if skipped else ""))
+
+
 def unique_dest(dest_dir: Path, src: Path, root: Path) -> Path:
     dest = dest_dir / src.name
     if dest.exists() or src.parent != root:
@@ -466,13 +513,14 @@ def main(argv=None) -> int:
         print(f"Not a folder: {root}", file=sys.stderr)
         return 2
     out_dir = root / args.highlights
-    files = find_jpegs(root, args.recursive, exclude_dirs={args.highlights})
+    files = find_images(root, args.recursive, exclude_dirs={args.highlights}, include_raw=not args.no_raw)
     if args.limit:
         files = files[: args.limit]
     if not files:
-        print("No JPEGs found.")
+        print("No JPEG or RAW files found.")
         return 1
-    print(f"Found {len(files)} JPEGs in {root}")
+    n_raw = sum(1 for f in files if is_raw(f))
+    print(f"Found {len(files)} images in {root}" + (f" ({n_raw} RAW without a JPEG twin)" if n_raw else ""))
 
     photos = [Photo(path=f, key=cache_mod.cache_key(f, root)) for f in files]
     for ph in tqdm(photos, unit="img", desc="Reading EXIF", leave=False):
@@ -498,7 +546,8 @@ def main(argv=None) -> int:
     if args.judge:
         from fotosort.judge import Judge
 
-        judge = Judge(args.judge_provider, args.judge_model, args.key_file, args.judge_detail, args.judge_hint)
+        judge = Judge(args.judge_provider, args.judge_model, args.key_file, args.judge_detail, args.judge_hint,
+                      args.judge_base_url)
         judge.detector = getattr(emb, "detector", None)
         if judge.detector is None and args.person_area > 0:
             from fotosort.embed import SubjectDetector
@@ -511,6 +560,8 @@ def main(argv=None) -> int:
 
     report = root / args.report
     write_report(photos, report)
+    if args.xmp:
+        write_sidecars(photos, args)
 
     picks = [ph for ph in photos if ph.selected]
     rejected = sum(1 for ph in photos if ph.reject)
@@ -556,10 +607,11 @@ def move_picks(picks: list[Photo], root: Path, args, emb) -> int:
 
     if enhanced_only:
         sources = {str(ph.path): ph.path for ph in picks}
-        enhance_picks(picks, sources, out_dir, emb, args, namer=lambda src: unique_dest(out_dir, src, root))
+        enhance_picks(picks, sources, out_dir, emb, args,
+                      namer=lambda src: unique_dest(out_dir, _jpg_name(src), root))
     elif args.enhance:
         enh_dir = out_dir / "Enhanced"
-        enhance_picks(picks, new_paths, enh_dir, emb, args, namer=lambda src: enh_dir / src.name)
+        enhance_picks(picks, new_paths, enh_dir, emb, args, namer=lambda src: enh_dir / _jpg_name(src).name)
     return 0
 
 
@@ -595,6 +647,11 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
             c = cached.get(ph.key)
             ph.emb = c["emb"] if c else None
     return move_picks(picks, root, args, emb)
+
+
+def _jpg_name(src: Path) -> Path:
+    """Enhanced output of a RAW file is a JPEG; a JPEG keeps its name."""
+    return src.with_suffix(".jpg") if is_raw(src) else src
 
 
 def enhance_picks(picks: list[Photo], sources: dict[str, Path], enh_dir: Path, emb, args, namer) -> None:

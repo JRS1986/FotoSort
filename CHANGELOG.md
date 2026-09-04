@@ -6,10 +6,28 @@ All notable changes to FotoSort are documented here. The format follows
 
 ## [Unreleased]
 
-Planned, in rough order of value: a `--judge-base-url` option so the judge can
-run against a local OpenAI-compatible vision model (Ollama, LM Studio, MLX),
-RAW input via the embedded preview, XMP sidecar export of picks and reasons for
-Lightroom and Capture One, DINOv2 embeddings for near-duplicate detection.
+### Added
+- **RAW input.** ORF, NEF, CR2, CR3, ARW, RAF, RW2, DNG, PEF and SRW files
+  are analysed through their embedded camera preview; a RAW next to a JPEG
+  of the same name is skipped. Capture time is read from the RAW's EXIF.
+  Enhanced output of a RAW pick is a full-resolution JPEG (camera white
+  balance, no auto-brightening) carrying camera model and capture time.
+  `--no-raw` ignores RAW files.
+- **Local judge.** `--judge-base-url` points the judge at any
+  OpenAI-compatible server (Ollama, LM Studio, vLLM, MLX); no key, no upload.
+  Falls back automatically when the server rejects JSON mode.
+- **XMP sidecars.** `--xmp picks|all` writes `<stem>.xmp` next to the
+  originals with rating, colour label, keywords and the judge's reason, for
+  Lightroom (RAW), Capture One, Bridge and digiKam. Existing sidecars are
+  never overwritten unless `--xmp-overwrite`.
+
+### Changed
+- **Near-duplicate detection uses DINOv2** (small, 224 px) instead of CLIP.
+  On a calibrated safari set burst twins score above 0.90 and different
+  compositions of the same subject below 0.88, where CLIP overlapped.
+  `--dup-sim` now refers to DINOv2 similarity (default 0.89). The thumbnail
+  correlation still catches pixel-identical frames. Cache format v5.
+- New dependencies: timm, rawpy, exifread.
 
 ## [0.1.0] - 2026-09-04
 

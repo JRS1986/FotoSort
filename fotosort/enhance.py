@@ -305,11 +305,12 @@ def save_like_original(out: Image.Image, original: Image.Image, dst: Path, quali
 
 
 def enhance_file(src: Path, dst: Path, style: str, strength: float) -> None:
-    with Image.open(src) as im:
-        im.load()
-        out = enhance(im, style, strength)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        save_like_original(out, im, dst)
+    from fotosort.quality import open_full
+
+    im = open_full(str(src))
+    out = enhance(im, style, strength)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    save_like_original(out, im, dst)
 
 
 # --------------------------------------------------------------------------- standalone CLI
@@ -323,17 +324,17 @@ def main(argv=None) -> int:
     p.add_argument("--no-clip", action="store_true", help="Detect style from image statistics only (no model)")
     args = p.parse_args(argv)
 
-    from fotosort.scan import find_jpegs
+    from fotosort.scan import find_images
 
     files: list[Path] = []
     for path in args.paths:
         path = path.expanduser().resolve()
         if path.is_dir():
-            files += find_jpegs(path, recursive=False, exclude_dirs={"Enhanced", "Highlights"})
+            files += find_images(path, recursive=False, exclude_dirs={"Enhanced", "Highlights"})
         elif path.is_file():
             files.append(path)
     if not files:
-        print("No JPEGs found.", file=sys.stderr)
+        print("No JPEG or RAW files found.", file=sys.stderr)
         return 1
 
     embedder = style_emb = None
@@ -348,20 +349,20 @@ def main(argv=None) -> int:
 
     for src in tqdm(files, unit="img", desc="Enhancing"):
         out_dir = args.out.expanduser().resolve() if args.out else src.parent / "Enhanced"
-        with Image.open(src) as im:
-            im.load()
-            if args.style:
-                style = args.style
-            else:
-                from fotosort.quality import load_small
+        from fotosort.quality import load_small, open_full
 
-                small = load_small(str(src), 512)
-                stats = image_stats(np.asarray(small, dtype=np.float32))
-                emb = embedder.embed_batch([embedder.prepare(small)])[0] if embedder else None
-                style = detect_style(emb, style_emb, stats)
-            out = enhance(im, style, args.strength)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            save_like_original(out, im, out_dir / src.name)
+        im = open_full(str(src))
+        if args.style:
+            style = args.style
+        else:
+            small = load_small(str(src), 512)
+            stats = image_stats(np.asarray(small, dtype=np.float32))
+            emb = embedder.embed_batch([embedder.prepare(small)])[0] if embedder else None
+            style = detect_style(emb, style_emb, stats)
+        out = enhance(im, style, args.strength)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dst = out_dir / (src.name if src.suffix.lower() in {".jpg", ".jpeg"} else src.stem + ".jpg")
+        save_like_original(out, im, dst)
         tqdm.write(f"{src.name}: {style}")
     print(f"Enhanced {len(files)} images.")
     return 0

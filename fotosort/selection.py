@@ -12,13 +12,20 @@ class Candidate:
     id: str
     score: float
     bucket: str
-    emb: np.ndarray  # L2-normalised CLIP embedding
+    emb: np.ndarray  # L2-normalised CLIP embedding (kept for labels; not used for duplicates)
     sig: np.ndarray | None = None  # zero-mean unit-norm thumbnail (see quality.signature)
+    dino: np.ndarray | None = None  # L2-normalised DINOv2 embedding (visual sameness)
 
 
 def is_duplicate(c: Candidate, picked: list[Candidate], dup_sim: float, dup_pixel: float) -> bool:
+    """Near-duplicate if the DINOv2 similarity reaches `dup_sim` or the thumbnail
+    correlation reaches `dup_pixel`. Without a DINOv2 embedding (old cache) the
+    CLIP embedding is used with the same threshold, which is cruder."""
     for p in picked:
-        if float(np.dot(c.emb, p.emb)) >= dup_sim:
+        if c.dino is not None and p.dino is not None:
+            if float(np.dot(c.dino, p.dino)) >= dup_sim:
+                return True
+        elif float(np.dot(c.emb, p.emb)) >= dup_sim:
             return True
         if c.sig is not None and p.sig is not None and float(np.dot(c.sig, p.sig)) >= dup_pixel:
             return True
@@ -36,7 +43,7 @@ def select_day(
 
     Candidates are visited best-first. One is taken when its score is at least
     `min_score`, its bucket still has budget, and it is not a near-duplicate
-    (CLIP cosine >= `dup_sim` or thumbnail correlation >= `dup_pixel`) of any
+    (DINOv2 cosine >= `dup_sim` or thumbnail correlation >= `dup_pixel`) of any
     photo already taken that day, in any bucket. So a weak photo is never
     picked just because its subject has free slots, and the same colony shot
     labelled "seagull" and "cormorant" cannot get in twice.

@@ -3,8 +3,9 @@
 [![CI](https://github.com/JRS1986/FotoSort/actions/workflows/ci.yml/badge.svg)](https://github.com/JRS1986/FotoSort/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Picks the best, most varied photos out of a folder with thousands of JPEGs and
-puts them into a subfolder. Built for safari-style shooting: burst mode, many
+Picks the best, most varied photos out of a folder with thousands of JPEGs or
+RAW files and puts them into a subfolder, or tells Lightroom about them via
+XMP sidecars. Built for safari-style shooting: burst mode, many
 near-identical frames, several animals per day, and no wish to click through
 every frame by hand.
 
@@ -27,7 +28,7 @@ Every JPEG gets a handful of signals, computed once and cached in the folder:
 | **Aesthetics** | CLIP ViT-L/14 embedding + the [LAION aesthetic predictor](https://github.com/christophschuhmann/improved-aesthetic-predictor), a 1..10 score. Runs on Apple GPU (MPS), CUDA or CPU. |
 | **Subject label** | Zero-shot CLIP label from a list of ~70 subjects (lion, elephant, bird, landscape, sunset, ...). Bring your own list with `--labels`. |
 | **Subject box** | YOLOv8 detector for people and animals: how big the main subject is and whether it is cut off by the frame. A person covering at least 2 % of the frame puts the photo in the "people" group, because CLIP alone files a child in a field under "kudu antelope". |
-| **Signature** | A tiny normalised thumbnail. Its correlation between two frames tells identical framings apart from merely similar content, which CLIP cannot. |
+| **Sameness** | A DINOv2 embedding. Unlike CLIP, which is semantic (two poses of one animal score 0.95), DINOv2 measures visual sameness: burst twins score above 0.9, different compositions of the same subject below 0.88 on a calibrated safari set. A tiny normalised thumbnail additionally catches pixel-identical frames. |
 
 Then the folder is organised:
 
@@ -42,7 +43,7 @@ Then the folder is organised:
    photos, capped at three times the base.
 3. **Selection by score.** Per day, candidates are visited best-first. One is
    taken if its score is above `--min-score`, its group still has budget, and
-   it is not a near-duplicate (CLIP similarity or thumbnail correlation) of
+   it is not a near-duplicate (DINOv2 similarity or thumbnail correlation) of
    anything already taken that day, in any group. The score is a weighted
    z-score of aesthetics and log-sharpness, plus a bonus for a large detected
    subject, minus penalties for clipping and for a small subject cut off by
@@ -61,9 +62,16 @@ The CSV report lists every score, label, group, whether the judge saw the frame,
 and why it was picked, so you can see exactly why a frame was or was not chosen.
 Edit the `selected` column and run `--apply-report` to override any decision.
 
+**RAW files** (ORF, NEF, CR2, CR3, ARW, RAF, RW2, DNG, PEF, SRW) are analysed
+through their embedded camera preview, so a RAW-only card works directly. A
+RAW that sits next to a JPEG with the same name is skipped, the JPEG stands
+for both. Enhanced output of a RAW pick is a full-resolution JPEG demosaiced
+with the camera white balance, carrying the camera model and capture time.
+`--no-raw` ignores RAW files.
+
 ## Install
 
-Requires Python 3.11+ and about 1 GB of disk for the model weights.
+Requires Python 3.11+ and about 1.1 GB of disk for the model weights.
 
 ```bash
 git clone https://github.com/JRS1986/FotoSort.git
@@ -76,7 +84,8 @@ fotosort /path/to/photos
 `./fotosort.sh /path` does the same from a clean checkout, creating the
 virtualenv on first use. The first run downloads the CLIP weights (~900 MB,
 Hugging Face cache), the aesthetic head (~4 MB) and the YOLOv8 detector
-(~50 MB) into `~/.cache/fotosort`. Per-image features are cached in
+(~50 MB) into `~/.cache/fotosort`, and DINOv2-small (~90 MB) into the
+Hugging Face cache. Per-image features are cached in
 `.fotosort_cache.npz` inside the photo folder, so re-running with different
 settings takes seconds. Throughput on an Apple M4 is roughly 7 images/s
 including detection.
@@ -105,14 +114,42 @@ fotosort /path --judge --judge-provider anthropic # claude-opus-5 via ANTHROPIC_
 fotosort /path --judge --judge-coverage shortlist --judge-detail low   # the cheap variant
 ```
 
-The judge sends downsized JPEGs (and subject crops) of every distinct frame to
-the provider's API. Do not use it on photos you must not upload. Cost scales
+**Local judge, nothing leaves your machine.** Any OpenAI-compatible server
+works: Ollama, LM Studio, vLLM, an MLX server. With Ollama:
+
+```bash
+ollama pull qwen3-vl:8b
+fotosort /path --judge --judge-base-url http://localhost:11434/v1 --judge-model qwen3-vl:8b
+```
+
+No key is needed. Local models are slower and less discerning than the
+frontier ones, so expect a full-coverage run over 2,000 frames to take an hour
+or two on an Apple-silicon Mac; `--judge-coverage shortlist` helps.
+
+With a cloud provider, the judge sends downsized JPEGs (and subject crops) of
+every distinct frame to the provider's API. Do not use it on photos you must
+not upload. Cost scales
 with the number of frames: full coverage of a 2,000-photo folder is roughly
 2M input tokens, around $4 with `gpt-5.6-terra` and $8 with `gpt-5.6-sol`;
 `--judge-coverage shortlist --judge-detail low` is about a tenth of that. The
 report's `shortlisted` column shows what the judge saw and `judge_reason` why
 it picked a frame; frames that were pixel-identical to a sibling are marked
 "twin of X" and never sent twice.
+
+### Lightroom, Capture One, Bridge, digiKam: XMP sidecars
+
+```bash
+fotosort /path --xmp picks                       # <stem>.xmp next to every pick: rating 5, keywords, judge reason
+fotosort /path --judge --xmp all                 # picks 5 stars, judged-but-not-picked 3, rejected 1, others 0
+```
+
+Sidecars carry `xmp:Rating`, a colour label (green for picks, red for
+rejects), keywords `FotoSort`, `FotoSort|<subject>` and `FotoSort|Pick`, and the
+judge's reason as the description. Nothing is moved or copied. Existing
+sidecars are left untouched (Lightroom keeps develop settings in them) unless
+you pass `--xmp-overwrite`. Lightroom reads sidecars for RAW files; for JPEGs
+it expects embedded metadata, so there use Capture One, Bridge or digiKam, or
+embed with `exiftool -tagsfromfile %d%f.xmp -all:all photo.jpg`.
 
 ### Enhancing the picks
 
@@ -142,6 +179,7 @@ EXIF and colour profile.
 | `--move` / `--copy` | dry run | move or copy the picks into the output folder |
 | `--highlights` | Highlights | name of the output subfolder |
 | `--recursive` | | also scan subfolders |
+| `--no-raw` | | ignore RAW files (by default RAW files without a same-named JPEG are analysed) |
 | `--with-sidecars` | | move/copy RAW and XMP files with the same name |
 | `--max-per-group` | 5 | base picks per subject per day |
 | `--extra-per` | 40 | one extra pick per this many photos in a group, capped at 3x base (0 = off) |
@@ -150,7 +188,7 @@ EXIF and colour profile.
 | `--label-mode` | scene | `image` labels every frame on its own |
 | `--labels` | built-in list | text file with one subject label per line |
 | `--skip-labels` | document or screenshot | comma-separated subjects never selected |
-| `--dup-sim` | 0.95 | CLIP similarity above which two picks count as duplicates |
+| `--dup-sim` | 0.89 | DINOv2 similarity above which two picks count as duplicates |
 | `--dup-pixel` | 0.90 | thumbnail correlation above which two picks count as duplicates |
 | `--min-score` | -0.5 | never pick a photo scoring below this |
 | `--aesthetic-weight` | 0.6 | aesthetics vs sharpness weight in the score |
@@ -165,6 +203,8 @@ EXIF and colour profile.
 | `--judge-detail` | high | image detail for the OpenAI judge (`low` is ~10x cheaper) |
 | `--judge-hint` | | a sentence or two about this shoot for the judge |
 | `--key-file` | | read the judge API key from a `.env` or YAML file |
+| `--judge-base-url` | | OpenAI-compatible server for a local judge (needs `--judge-model`) |
+| `--xmp` / `--xmp-overwrite` | off | write XMP sidecars for `picks` or `all`; replace existing ones |
 | `--taste-dir` / `--taste-weight` | off / 0.5 | folder of photos you love; frames resembling them get up to this bonus |
 | `--enhance` | | enhance the picks (see above) |
 | `--enhance-strength` / `--enhance-style` | 1.0 / auto | global strength; force one style |
@@ -179,8 +219,9 @@ EXIF and colour profile.
 ```
 fotosort/
   cli.py      argument parsing and the pipeline: scan, features, scenes, score, select, judge, move
-  quality.py  sharpness, exposure and thumbnail signature (PIL + numpy)
-  embed.py    CLIP embeddings, aesthetic head, zero-shot labels, YOLO subject detection
+  quality.py  sharpness, exposure, thumbnail signature, JPEG/RAW decoding (PIL, numpy, rawpy)
+  embed.py    CLIP embeddings, aesthetic head, zero-shot labels, DINOv2 sameness, YOLO subject detection
+  xmp.py      XMP sidecar writer
   group.py    scene / burst clustering by time and similarity
   selection.py  score-based selection, judge shortlists and tournament chunking
   judge.py    the vision-model judge (OpenAI / Anthropic), prompts and verdict parsing
@@ -215,6 +256,8 @@ and [CHANGELOG.md](CHANGELOG.md) for what has changed and what is planned.
 - [OpenAI CLIP](https://github.com/openai/CLIP) via [open_clip](https://github.com/mlfoundations/open_clip)
 - [LAION improved aesthetic predictor](https://github.com/christophschuhmann/improved-aesthetic-predictor)
 - [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics)
+- [DINOv2](https://github.com/facebookresearch/dinov2) via [timm](https://github.com/huggingface/pytorch-image-models)
+- [rawpy](https://github.com/letmaik/rawpy) (LibRaw) and [ExifRead](https://github.com/ianare/exif-py)
 
 ## License
 

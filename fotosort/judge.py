@@ -131,21 +131,28 @@ def parse_verdict(text: str, ids: list[str]) -> Verdict:
 
 class Judge:
     def __init__(self, provider: str = "openai", model: str | None = None, key_file: str | None = None,
-                 detail: str = "high", hint: str = ""):
+                 detail: str = "high", hint: str = "", base_url: str | None = None):
         if provider not in DEFAULT_MODELS:
             raise SystemExit(f"Unknown judge provider {provider!r}; use openai or anthropic")
         self.provider = provider
+        self.base_url = base_url  # an OpenAI-compatible server (Ollama, LM Studio, vLLM, MLX): local and free
+        if base_url and provider != "openai":
+            raise SystemExit("--judge-base-url works with the openai provider (OpenAI-compatible servers)")
+        if base_url and not model:
+            raise SystemExit("--judge-base-url needs --judge-model, e.g. --judge-model qwen3-vl:8b")
         self.model = model or DEFAULT_MODELS[provider]
         self.detail = detail  # OpenAI image detail: "high" sees sharpness and faces, "low" is ~10x cheaper
         self.hint = hint.strip()  # extra guidance for this shoot, appended to every prompt
         self.usage = {"input": 0, "output": 0}
         key = read_key(provider, key_file)
+        if not key and base_url:
+            key = "local"  # local servers ignore it, the SDK insists on one
         if not key:
             raise SystemExit(f"--judge needs an API key: set {KEY_NAMES[provider][0]} or pass --key-file")
         if provider == "openai":
             import openai  # slow import, keep local
 
-            self.client = openai.OpenAI(api_key=key) if key else openai.OpenAI()
+            self.client = openai.OpenAI(api_key=key, base_url=base_url) if base_url else openai.OpenAI(api_key=key)
         else:
             import anthropic
 
@@ -203,12 +210,20 @@ class Judge:
                 content.append({"type": "image_url",
                                 "image_url": {"url": f"data:image/jpeg;base64,{crop}", "detail": "low"}})
         content.append({"type": "text", "text": prompt})
-        resp = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": content}],
-            response_format={"type": "json_object"},
-            max_completion_tokens=4000,
-        )
+        messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": content}]
+        if self.base_url:
+            # local servers: older parameter name, and not all of them accept response_format
+            try:
+                resp = self.client.chat.completions.create(
+                    model=self.model, messages=messages, max_tokens=4000, response_format={"type": "json_object"})
+            except Exception as e:  # noqa: BLE001 - retry once without the JSON constraint
+                if "response_format" not in str(e) and "json" not in str(e).lower():
+                    raise
+                resp = self.client.chat.completions.create(model=self.model, messages=messages, max_tokens=4000)
+        else:
+            resp = self.client.chat.completions.create(
+                model=self.model, messages=messages, response_format={"type": "json_object"},
+                max_completion_tokens=4000)
         if resp.usage:
             self.usage["input"] += resp.usage.prompt_tokens
             self.usage["output"] += resp.usage.completion_tokens

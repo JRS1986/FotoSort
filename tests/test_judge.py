@@ -63,3 +63,14 @@ def test_judge_needs_a_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(SystemExit):
         Judge("openai")
+
+
+def test_local_judge_needs_no_key_but_needs_a_model(monkeypatch):
+    import pytest
+
+    from fotosort.judge import Judge
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(SystemExit):
+        Judge("openai", base_url="http://localhost:11434/v1")
+    j = Judge("openai", model="qwen3-vl:8b", base_url="http://localhost:11434/v1")
+    assert j.base_url and str(j.client.base_url).startswith("http://localhost:11434")
