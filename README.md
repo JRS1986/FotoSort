@@ -50,9 +50,13 @@ Then the folder is organised:
    the frame.
 4. **Judge (optional, `--judge`).** A vision model picks the keepers the way a
    photo editor would: subject visible and sharp, faces not in shadow, best of
-   each burst, as varied as possible. It sees every frame: a group is judged in
-   time-ordered chunks of `--judge-chunk` frames, each chunk sends on its share
-   of the budget, and the winners meet in knock-out rounds until a final. Every
+   each burst, as varied as possible. By default (`--judge-coverage
+   preselect`) the scores first narrow each group to `--preselect` times its
+   budget (default 3x, at least 12 frames), taking the best frame of every
+   burst first, and the judge runs its tournament on those: time-ordered
+   chunks of `--judge-chunk` frames, each sending on its share of the budget,
+   knock-out rounds until a final. That is roughly a quarter of the tokens of
+   `--judge-coverage full`, where the judge sees every distinct frame. Every
    frame goes over twice, the whole picture plus a native-resolution crop of the
    detected subject, so the judge can see whether the eye is actually sharp.
    Each pick gets a one-line reason in the report. `--judge-hint` tells the
@@ -61,6 +65,23 @@ Then the folder is organised:
 The CSV report lists every score, label, group, whether the judge saw the frame,
 and why it was picked, so you can see exactly why a frame was or was not chosen.
 Edit the `selected` column and run `--apply-report` to override any decision.
+
+**Output layout.** `--layout species` puts the picks into one subfolder per
+subject (`Highlights/zebra/`, `Highlights/lion/`, `Highlights/people/`),
+`--layout day` one per day, `--layout day-species` both. The default is one
+flat folder.
+
+**DxO PureRAW.** With `--dxo`, RAW files go through PureRAW first. PureRAW
+has no command line, so FotoSort does what can be done: it looks for the
+processed twin of each RAW in the `DxO` folder next to it (any of PureRAW's
+naming templates, DNG preferred), hands the missing ones to the app with
+`open -a`, tells you to press Process, and waits (up to `--dxo-wait` hours)
+for the outputs to appear. From then on the twin is what gets scored,
+enhanced and copied, while the original RAW keeps its name in the report and
+sidecars. `--dxo all` processes every RAW before analysis (the denoised files
+are what gets judged); `--dxo picks` scores the originals and processes only
+the selected frames, which is many times faster. `--dxo-wait 0` uses existing
+outputs only.
 
 **RAW files** (ORF, NEF, CR2, CR3, ARW, RAF, RW2, DNG, PEF, SRW) are analysed
 through their embedded camera preview, so a RAW-only card works directly. A
@@ -100,6 +121,8 @@ fotosort /path --recursive --with-sidecars       # include subfolders, bring RAW
 fotosort /path --max-per-group 3                 # tighter selection
 fotosort /path --labels labels/whale_watching.txt --label-mode image --judge \   # label file from the checkout
     --judge-hint "Whale-watching trip: keepers show the animal itself, not just a blow or splash"
+fotosort /path --copy --enhance --layout species # one subfolder per animal: Highlights/zebra/, Highlights/lion/, ...
+fotosort /path --dxo picks --copy --enhance      # PureRAW on the picks, then enhance from the DxO DNGs
 fotosort /path --apply-report --copy --enhance   # re-apply (possibly hand-edited) report picks, no re-analysis
 fotosort enhance /any/folder                     # enhance any folder into <folder>/Enhanced
 ```
@@ -111,7 +134,8 @@ export OPENAI_API_KEY=sk-...                     # or --key-file path/to/.env (a
 fotosort /path --judge                           # OpenAI gpt-5.6-sol, every frame at high detail
 fotosort /path --judge --judge-model gpt-5.6-terra
 fotosort /path --judge --judge-provider anthropic # claude-opus-5 via ANTHROPIC_API_KEY
-fotosort /path --judge --judge-coverage shortlist --judge-detail low   # the cheap variant
+fotosort /path --judge --judge-coverage full     # the judge sees every distinct frame (about 4x the tokens)
+fotosort /path --judge --judge-detail low        # the cheap variant
 ```
 
 **Local judge, nothing leaves your machine.** Any OpenAI-compatible server
@@ -129,15 +153,17 @@ with its full 262k context by default, which spills most of it to the CPU and
 makes each request take minutes; a 16k context fits the GPU. Local models are
 slower and less discerning than the frontier ones, so keep chunks small
 (`--judge-chunk 6`), send frames at low detail, and consider
-`--judge-coverage shortlist`. Expect several seconds per frame on an
+a small `--preselect`. Expect several seconds per frame on an
 Apple-silicon Mac.
 
 With a cloud provider, the judge sends downsized JPEGs (and subject crops) of
 every distinct frame to the provider's API. Do not use it on photos you must
 not upload. Cost scales
 with the number of frames: full coverage of a 2,000-photo folder is roughly
-2M input tokens, around $4 with `gpt-5.6-terra` and $8 with `gpt-5.6-sol`;
-`--judge-coverage shortlist --judge-detail low` is about a tenth of that. The
+500k input tokens with the default preselection, around $1 with
+`gpt-5.6-terra` and $2 with `gpt-5.6-sol`, and about four times that with
+`--judge-coverage full`;
+`--judge-detail low` is about a tenth of that. The
 report's `shortlisted` column shows what the judge saw and `judge_reason` why
 it picked a frame; frames that were pixel-identical to a sibling are marked
 "twin of X" and never sent twice.
@@ -184,6 +210,9 @@ EXIF and colour profile.
 |---|---|---|
 | `--move` / `--copy` | dry run | move or copy the picks into the output folder |
 | `--highlights` | Highlights | name of the output subfolder |
+| `--layout` | flat | `species`, `day` or `day-species` subfolders inside the output folder |
+| `--dxo` | off | `all`: PureRAW on every RAW before analysis; `picks`: only on the selected frames |
+| `--dxo-app` / `--dxo-dir` / `--dxo-wait` | PureRAW 6 / `DxO` next to the RAWs / 8 h | hand-off application, output folder, wait time (0 = existing outputs only) |
 | `--recursive` | | also scan subfolders |
 | `--no-raw` | | ignore RAW files (by default RAW files without a same-named JPEG are analysed) |
 | `--with-sidecars` | | move/copy RAW and XMP files with the same name |
@@ -204,8 +233,8 @@ EXIF and colour profile.
 | `--detector` | yolov8m.pt | YOLOv8 weights (`yolov8n.pt` is 3x faster, m is better on birds) |
 | `--judge` | off | let a vision model choose the final picks |
 | `--judge-provider` / `--judge-model` | openai / gpt-5.6-sol | API and model (`anthropic` / `claude-opus-5`) |
-| `--judge-coverage` / `--judge-chunk` | full / 24 | every frame in chunks of this size, or `shortlist` |
-| `--shortlist-max` | 30 | frames per group in shortlist coverage (or 3x the budget) |
+| `--judge-coverage` / `--judge-chunk` | preselect / 24 | `preselect`: score-based preselection then the tournament; `full`: every frame |
+| `--preselect` / `--preselect-min` | 3 / 12 | preselection size as a multiple of the group budget, and its minimum |
 | `--judge-detail` | high | image detail for the OpenAI judge (`low` is ~10x cheaper) |
 | `--judge-hint` | | a sentence or two about this shoot for the judge |
 | `--key-file` | | read the judge API key from a `.env` or YAML file |
@@ -228,8 +257,9 @@ fotosort/
   quality.py  sharpness, exposure, thumbnail signature, JPEG/RAW decoding (PIL, numpy, rawpy)
   embed.py    CLIP embeddings, aesthetic head, zero-shot labels, DINOv2 sameness, YOLO subject detection
   xmp.py      XMP sidecar writer
+  dxo.py      DxO PureRAW twins: find, hand off, wait
   group.py    scene / burst clustering by time and similarity
-  selection.py  score-based selection, judge shortlists and tournament chunking
+  selection.py  score-based selection, judge preselection and tournament chunking
   judge.py    the vision-model judge (OpenAI / Anthropic), prompts and verdict parsing
   enhance.py  style detection and enhancement recipes, also the `enhance` subcommand
   scan.py     JPEG discovery, EXIF capture time, RAW/XMP sidecars

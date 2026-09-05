@@ -7,6 +7,18 @@ All notable changes to FotoSort are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **DxO PureRAW as a pre-processing step** (`--dxo all|picks`). Processed
+  twins in the `DxO` folder are found under any PureRAW naming template;
+  missing ones are handed to the app (`open -a`) and awaited. The twin is
+  scored, enhanced and copied; the RAW keeps its identity.
+- **Output layout** (`--layout species|day|day-species`): one subfolder per
+  subject and/or day inside the output folder.
+- **Preselection before the judge** is now the default
+  (`--judge-coverage preselect`, `--preselect 3`, `--preselect-min 12`):
+  the scores narrow each group to about three times its budget, best frame
+  of every burst first, and the judge tournament runs on those. Roughly a
+  quarter of the tokens of `full`, which remains available. The old
+  `shortlist` mode and `--shortlist-max` are gone.
 - **RAW input.** ORF, NEF, CR2, CR3, ARW, RAF, RW2, DNG, PEF and SRW files
   are analysed through their embedded camera preview; a RAW next to a JPEG
   of the same name is skipped. Capture time is read from the RAW's EXIF.

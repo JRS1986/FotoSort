@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import shutil
+import subprocess
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -27,6 +28,7 @@ from fotosort.selection import Candidate, ScenedCandidate, build_shortlist, chun
 class Photo:
     path: Path
     key: str
+    source: Path | None = None  # file actually decoded (a DxO twin), None = path itself
     time: datetime | None = None
     emb: np.ndarray | None = None
     sig: np.ndarray | None = None
@@ -65,6 +67,16 @@ def parse_args(argv=None):
     g.add_argument("--copy", action="store_true", help="Copy picks into Highlights instead of moving")
     p.add_argument("--highlights", default="Highlights", help="Name of the output subfolder")
     p.add_argument("--recursive", action="store_true", help="Also scan subfolders")
+    p.add_argument("--dxo", nargs="?", const="all", choices=["all", "picks"],
+                   help="Run RAW files through DxO PureRAW first: 'all' before analysis (denoised files are scored), "
+                        "'picks' only the selected ones before enhancing/copying. Existing outputs in the DxO folder "
+                        "are reused; missing ones are handed to PureRAW, where you press Process")
+    p.add_argument("--dxo-app", default="PureRAW 6", help="Application name for the PureRAW hand-off")
+    p.add_argument("--dxo-dir", type=Path, help="PureRAW output folder (default: a 'DxO' folder next to the RAWs)")
+    p.add_argument("--dxo-wait", type=float, default=8.0,
+                   help="Hours to wait for PureRAW outputs; 0 = do not hand off, use existing outputs only")
+    p.add_argument("--layout", default="flat", choices=["flat", "species", "day", "day-species"],
+                   help="Output folder structure: one folder, one per subject, one per day, or day/subject")
     p.add_argument("--no-raw", action="store_true",
                    help="Ignore RAW files (by default RAW files without a same-named JPEG are analysed via "
                         "their embedded preview)")
@@ -83,12 +95,13 @@ def parse_args(argv=None):
                    help="Let a vision model choose the final picks from each group's shortlist")
     p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic"], help="API for --judge")
     p.add_argument("--judge-model", help="Model for --judge (default: gpt-5.6-sol / claude-opus-5)")
-    p.add_argument("--judge-coverage", default="full", choices=["full", "shortlist"],
-                   help="full: the judge sees every frame (groups are judged in chunks, chunk winners meet in a "
-                        "final round); shortlist: only the best ~30 per group by score (cheaper)")
+    p.add_argument("--judge-coverage", default="preselect", choices=["preselect", "full"],
+                   help="preselect: score-based preselection of --preselect x the group's budget (best of every burst "
+                        "first), then the judge tournament on those; full: the judge sees every frame")
+    p.add_argument("--preselect", type=float, default=3.0,
+                   help="Preselection size as a multiple of the group's budget (at least --preselect-min frames)")
+    p.add_argument("--preselect-min", type=int, default=12, help="Minimum preselection size per group")
     p.add_argument("--judge-chunk", type=int, default=24, help="Frames per judge request in full coverage")
-    p.add_argument("--shortlist-max", type=int, default=30,
-                   help="Frames per group shown to the judge in shortlist mode (or 3x the budget)")
     p.add_argument("--taste-dir", help="Folder with photos you love; frames that resemble them get a score bonus")
     p.add_argument("--taste-weight", type=float, default=0.5, help="Max bonus from --taste-dir")
     p.add_argument("--judge-hint", default="",
@@ -137,7 +150,7 @@ def parse_args(argv=None):
 def _decode(photo: Photo, prepare):
     """Returns (photo, sharpness, exposure, tensor, small image) or (photo, None, error, None, None)."""
     try:
-        img = load_small(str(photo.path))
+        img = load_small(str(photo.source or photo.path))
         gray = to_gray(img)
         ex = exposure(gray)
         photo.sig = signature(img)
@@ -348,7 +361,7 @@ def judge_boxes(photos: list[Photo], judge) -> dict[str, tuple | None]:
     smalls, kept = [], []
     for p in photos:
         try:
-            im = load_small(str(p.path))
+            im = load_small(str(p.source or p.path))
         except OSError:  # deleted while we were running
             continue
         im.thumbnail((640, 640))
@@ -383,12 +396,12 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
             for label, k in budgets.items():
                 group = [p for p in day_buckets[label] if not p.reject]
                 sc = [ScenedCandidate(str(p.path), p.score, p.label, p.emb, p.sig, p.dino, p.scene) for p in group]
-                if args.judge_coverage == "full":
-                    rounds, twins = chunk_for_tournament(sc, args.judge_chunk)
-                    for dropped, kept_id in twins.items():
-                        by_path[dropped].judge_reason = f"= twin of {Path(kept_id).name}"
-                else:
-                    rounds = [build_shortlist(sc, max(args.shortlist_max, 3 * k))]
+                if args.judge_coverage == "preselect":
+                    keep = set(build_shortlist(sc, max(args.preselect_min, int(round(args.preselect * k)))))
+                    sc = [c for c in sc if c.id in keep]
+                rounds, twins = chunk_for_tournament(sc, args.judge_chunk)
+                for dropped, kept_id in twins.items():
+                    by_path[dropped].judge_reason = f"= twin of {Path(kept_id).name}"
                 rounds = [[i for i in r if Path(i).exists()] for r in rounds]  # user may delete files meanwhile
                 rounds = [r for r in rounds if r]
                 if not rounds:
@@ -523,6 +536,8 @@ def main(argv=None) -> int:
     print(f"Found {len(files)} images in {root}" + (f" ({n_raw} RAW without a JPEG twin)" if n_raw else ""))
 
     photos = [Photo(path=f, key=cache_mod.cache_key(f, root)) for f in files]
+    if args.dxo == "all" and not args.apply_report:
+        attach_dxo(photos, root, args, only=None)
     for ph in tqdm(photos, unit="img", desc="Reading EXIF", leave=False):
         ph.time = capture_time(ph.path)
 
@@ -564,6 +579,8 @@ def main(argv=None) -> int:
         write_sidecars(photos, args)
 
     picks = [ph for ph in photos if ph.selected]
+    if args.dxo == "picks" and (args.move or args.copy):
+        attach_dxo(photos, root, args, only=picks)
     rejected = sum(1 for ph in photos if ph.reject)
     print()
     print(f"{'day':<12}{'subject':<24}{'photos':>7}{'picks':>6}")
@@ -584,35 +601,93 @@ def main(argv=None) -> int:
     return move_picks(picks, root, args, emb)
 
 
+def layout_dir(out_dir: Path, ph: Photo, layout: str) -> Path:
+    """Where a pick goes: flat, per subject, per day, or day/subject."""
+    safe = "".join(c if c.isalnum() or c in " -_()" else "_" for c in ph.label).strip() or "other"
+    parts = {"flat": [], "species": [safe], "day": [ph.day], "day-species": [ph.day, safe]}[layout]
+    return out_dir.joinpath(*parts)
+
+
 def move_picks(picks: list[Photo], root: Path, args, emb) -> int:
+    """Copy or move the picks (plus sidecars and DxO twins) into the output
+    layout, then enhance. With --copy --enhance the enhanced JPEG is the copy;
+    with --move --enhance the originals move and the enhanced versions go into
+    an Enhanced/ subfolder of each destination folder."""
     out_dir = root / args.highlights
     out_dir.mkdir(exist_ok=True)
-    enhanced_only = args.enhance and args.copy  # copy mode: the enhanced version IS the copy
+    enhanced_only = args.enhance and args.copy
     op = shutil.copy2 if args.copy else shutil.move
     moved = 0
-    new_paths: dict[str, Path] = {}
     picks = [ph for ph in picks if ph.path.exists()]
     for ph in picks:
+        dest_dir = layout_dir(out_dir, ph, args.layout)
+        dest_dir.mkdir(parents=True, exist_ok=True)
         targets = sidecars(ph.path) if args.with_sidecars else []
+        if ph.source and ph.source != ph.path and ph.source.exists():
+            targets.append(ph.source)  # the DxO-processed file travels with the RAW
         if not enhanced_only:
             targets = [ph.path] + targets
         for src in targets:
-            dest = unique_dest(out_dir, src, root)
+            # a DxO twin keeps its own name (it lives in a subfolder, which unique_dest would otherwise prefix)
+            dest = unique_dest(dest_dir, src, src.parent if src == ph.source else root)
             op(str(src), str(dest))
             moved += 1
             if src == ph.path:
-                new_paths[str(ph.path)] = dest
+                ph.path = dest  # keep pointing at the file where it now lives
+            elif src == ph.source:
+                ph.source = dest
     if moved:
         print(f"{'Copied' if args.copy else 'Moved'} {moved} files into {out_dir}")
 
-    if enhanced_only:
-        sources = {str(ph.path): ph.path for ph in picks}
-        enhance_picks(picks, sources, out_dir, emb, args,
-                      namer=lambda src: unique_dest(out_dir, _jpg_name(src), root))
-    elif args.enhance:
-        enh_dir = out_dir / "Enhanced"
-        enhance_picks(picks, new_paths, enh_dir, emb, args, namer=lambda src: enh_dir / _jpg_name(src).name)
+    if args.enhance:
+        def dest_of(ph: Photo) -> Path:
+            base = layout_dir(out_dir, ph, args.layout)
+            if not enhanced_only:
+                base = base / "Enhanced"
+            base.mkdir(parents=True, exist_ok=True)
+            return unique_dest(base, _jpg_name(ph.path), root)
+
+        enhance_picks(picks, emb, args, dest_of, out_dir)
     return 0
+
+
+def attach_dxo(photos: list[Photo], root: Path, args, only: list[Photo] | None) -> None:
+    """Find or produce PureRAW twins for the RAW files in `only` (None = all)
+    and make them the decode source. Handing off to PureRAW is skipped when
+    --dxo-wait is 0."""
+    from fotosort.dxo import find_twin, send_to_pureraw, wait_for_twins
+
+    group = [ph for ph in (only if only is not None else photos) if is_raw(ph.path)]
+    if not group:
+        return
+    missing = []
+    for ph in group:
+        twin = find_twin(ph.path, args.dxo_dir)
+        if twin is not None:
+            ph.source = twin
+        else:
+            missing.append(ph)
+    print(f"DxO PureRAW: {len(group) - len(missing)} of {len(group)} RAW files already processed")
+    if missing and args.dxo_wait > 0:
+        print(f"Handing {len(missing)} RAW files to {args.dxo_app}: press Process there. "
+              f"Waiting up to {args.dxo_wait:g} h for the outputs ...")
+        try:
+            send_to_pureraw([ph.path for ph in missing], args.dxo_app)
+        except (OSError, subprocess.CalledProcessError) as e:
+            print(f"Could not open {args.dxo_app}: {e}; continuing with the originals")
+        else:
+            done = wait_for_twins([ph.path for ph in missing], args.dxo_dir, args.dxo_wait * 3600)
+            for ph in missing:
+                if ph.path in done:
+                    ph.source = done[ph.path]
+            left = len(missing) - len(done)
+            if left:
+                print(f"{left} RAW files still unprocessed; using the originals for those")
+    elif missing:
+        print(f"{len(missing)} RAW files have no DxO output yet; using the originals for those")
+    for ph in group:
+        if ph.source is not None:
+            ph.key = cache_mod.cache_key(ph.source, root)
 
 
 def apply_report(photos: list[Photo], root: Path, args) -> int:
@@ -637,6 +712,8 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
             print(f"  {ph.path.relative_to(root)}  [{ph.label}]")
         print("Dry run. Add --move or --copy.")
         return 0
+    if args.dxo:
+        attach_dxo(photos, root, args, only=picks)
     emb = None
     if args.enhance and not args.enhance_style:
         from fotosort.embed import Embedder
@@ -654,17 +731,16 @@ def _jpg_name(src: Path) -> Path:
     return src.with_suffix(".jpg") if is_raw(src) else src
 
 
-def enhance_picks(picks: list[Photo], sources: dict[str, Path], enh_dir: Path, emb, args, namer) -> None:
-    """Enhance each pick from `sources[original path]` into `namer(src)`."""
+def enhance_picks(picks: list[Photo], emb, args, dest_of, out_dir: Path) -> None:
+    """Enhance each pick from its source (the DxO twin if there is one) into `dest_of(pick)`."""
     from fotosort.enhance import STYLE_PROMPTS, detect_style, enhance_file, image_stats
 
     style_emb = None
     if not args.enhance_style and emb is not None:
         style_emb = emb.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
-    enh_dir.mkdir(parents=True, exist_ok=True)
     styles = defaultdict(int)
     for ph in tqdm(picks, unit="img", desc="Enhancing"):
-        src = sources[str(ph.path)]
+        src = ph.source or ph.path
         if args.enhance_style:
             style = args.enhance_style
         elif ph.person >= args.person_area > 0:
@@ -673,6 +749,6 @@ def enhance_picks(picks: list[Photo], sources: dict[str, Path], enh_dir: Path, e
             stats = image_stats(np.asarray(load_small(str(src), 512), dtype=np.float32))
             style = detect_style(ph.emb if style_emb is not None else None, style_emb, stats)
         styles[style] += 1
-        enhance_file(src, namer(src), style, args.enhance_strength)
+        enhance_file(src, dest_of(ph), style, args.enhance_strength)
     summary = ", ".join(f"{n} {s}" for s, n in sorted(styles.items(), key=lambda kv: -kv[1]))
-    print(f"Enhanced {len(picks)} picks into {enh_dir} ({summary})")
+    print(f"Enhanced {len(picks)} picks into {out_dir} ({summary})")
