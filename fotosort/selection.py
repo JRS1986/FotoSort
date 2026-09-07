@@ -113,3 +113,45 @@ def chunk_for_tournament(cands: list[ScenedCandidate], chunk: int = 24,
     n_chunks = max(1, -(-len(kept) // chunk))
     size = -(-len(kept) // n_chunks)
     return [[c.id for c in kept[i:i + size]] for i in range(0, len(kept), size)], twins
+
+
+def diverse_preselection(cands: list[ScenedCandidate], cap: int, quality_share: float = 0.5) -> list[str]:
+    """Preselection that covers a sighting's visual variety, not just its top
+    scores: the best-scoring `quality_share` of `cap` first (best of every
+    scene guaranteed), then farthest-point sampling in DINOv2 space among the
+    remaining frames whose score is at least the group median, so distinct
+    moments and compositions reach the judge even when they scored average."""
+    if not cands:
+        return []
+    ranked = sorted(cands, key=lambda c: c.score, reverse=True)
+    if len(ranked) <= cap:
+        return [c.id for c in ranked]
+    n_quality = max(1, int(round(cap * quality_share)))
+    chosen = build_shortlist(cands, n_quality)
+    chosen_set = set(chosen)
+    floor = float(np.percentile([c.score for c in ranked], 20))  # leave only the weakest fifth out
+    pool = [c for c in ranked if c.id not in chosen_set and c.score >= floor and c.dino is not None]
+    picked_vecs = [c.dino for c in cands if c.id in chosen_set and c.dino is not None]
+    if not pool or not picked_vecs:
+        return chosen + [c.id for c in ranked if c.id not in chosen_set][: cap - len(chosen)]
+    P = np.stack([c.dino for c in pool])
+    min_sim = (P @ np.stack(picked_vecs).T).max(axis=1)  # similarity to the closest chosen frame
+    while len(chosen) < cap and len(pool):
+        i = int(np.argmin(min_sim))  # the frame least like anything chosen so far
+        chosen.append(pool[i].id)
+        min_sim = np.maximum(min_sim, P @ P[i])
+        min_sim[i] = np.inf
+        if np.isinf(min_sim).all():
+            break
+    return chosen[:cap]
+
+
+def dedup_by_score(cands: list[Candidate], k: int, dup_sim: float, dup_pixel: float) -> list[str]:
+    """Best-first top-k without near-duplicates: the judge-less fallback."""
+    picked: list[Candidate] = []
+    for c in sorted(cands, key=lambda c: c.score, reverse=True):
+        if len(picked) >= k:
+            break
+        if not is_duplicate(c, picked, dup_sim, dup_pixel):
+            picked.append(c)
+    return [c.id for c in picked]

@@ -21,7 +21,14 @@ from fotosort.judge import Verdict
 from fotosort.labels import bucket_name, load_labels
 from fotosort.quality import exposure, load_small, sharpness, signature, to_gray
 from fotosort.scan import capture_time, find_images, is_raw, sidecars
-from fotosort.selection import Candidate, ScenedCandidate, build_shortlist, chunk_for_tournament, select_day
+from fotosort.selection import (
+    Candidate,
+    ScenedCandidate,
+    chunk_for_tournament,
+    dedup_by_score,
+    diverse_preselection,
+    select_day,
+)
 
 
 @dataclass
@@ -99,8 +106,11 @@ def parse_args(argv=None):
                    help="preselect: score-based preselection of --preselect x the group's budget (best of every burst "
                         "first), then the judge tournament on those; full: the judge sees every frame")
     p.add_argument("--preselect", type=float, default=3.0,
-                   help="Preselection size as a multiple of the group's budget (at least --preselect-min frames)")
+                   help="Preselection size as a multiple of the group's budget (at least --preselect-min frames, "
+                        "and at least --preselect-share of the group)")
     p.add_argument("--preselect-min", type=int, default=12, help="Minimum preselection size per group")
+    p.add_argument("--preselect-share", type=float, default=0.25,
+                   help="Preselection is at least this share of a group, so a 400-frame sighting sends ~100 frames")
     p.add_argument("--judge-chunk", type=int, default=24, help="Frames per judge request in full coverage")
     p.add_argument("--taste-dir", help="Folder with photos you love; frames that resemble them get a score bonus")
     p.add_argument("--taste-weight", type=float, default=0.5, help="Max bonus from --taste-dir")
@@ -353,6 +363,21 @@ def apply_person_override(photos: list[Photo], min_area: float) -> None:
             p.label, p.label_prob = "people", max(p.label_prob, p.person)
 
 
+def judge_with_retry(judge, paths, label, day, k, boxes, final=False, attempts: int = 3):
+    """A transient network error must not decide a group's picks: retry with a pause."""
+    import time
+
+    verdict = None
+    for attempt in range(attempts):
+        verdict = judge.judge(paths, label, day, k, boxes, final=final)
+        if not verdict.error or "declined" in verdict.error or "vanished" in verdict.error:
+            return verdict
+        if attempt < attempts - 1:
+            tqdm.write(f"Judge error for {day} {label} ({verdict.error[:60]}); retrying in {10 * (attempt + 1)}s")
+            time.sleep(10 * (attempt + 1))
+    return verdict
+
+
 def judge_boxes(photos: list[Photo], judge) -> dict[str, tuple | None]:
     """Subject boxes for the judge's 100% crops, detected on the fly for the shortlist only."""
     det = getattr(judge, "detector", None)
@@ -397,7 +422,9 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                 group = [p for p in day_buckets[label] if not p.reject]
                 sc = [ScenedCandidate(str(p.path), p.score, p.label, p.emb, p.sig, p.dino, p.scene) for p in group]
                 if args.judge_coverage == "preselect":
-                    keep = set(build_shortlist(sc, max(args.preselect_min, int(round(args.preselect * k)))))
+                    cap = max(args.preselect_min, int(round(args.preselect * k)),
+                              int(round(args.preselect_share * len(sc))))
+                    keep = set(diverse_preselection(sc, cap))
                     sc = [c for c in sc if c.id in keep]
                 rounds, twins = chunk_for_tournament(sc, args.judge_chunk)
                 for dropped, kept_id in twins.items():
@@ -414,14 +441,15 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                     # each chunk may send on its share of the budget, at least 2, so a strong burst is not capped early
                     kk = k if len(rounds) == 1 else min(k, max(2, -(-k * len(ids) // n_total) + 1))
                     boxes = judge_boxes([by_path[i] for i in ids], judge)
-                    verdict = judge.judge([Path(i) for i in ids], label, day, kk, boxes)
+                    verdict = judge_with_retry(judge, [Path(i) for i in ids], label, day, kk, boxes)
                     if verdict.error:
                         tqdm.write(f"Judge failed for {day} {label} ({verdict.error}); using scores instead")
                         judge.failures = getattr(judge, "failures", 0) + 1
                         if judge.failures >= 3:
                             raise SystemExit("The judge failed three times in a row; check the API key, model name "
                                              "and network, or run without --judge.")
-                        picks = sorted(ids, key=lambda i: by_path[i].score, reverse=True)[:kk]
+                        pool = [c for c in sc if c.id in set(ids)]
+                        picks = dedup_by_score(pool, kk, args.dup_sim, args.dup_pixel)
                         verdict = Verdict(picks, {i: "(judge failed, by score)" for i in picks})
                     else:
                         judge.failures = 0
@@ -436,10 +464,11 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                     for i0 in range(0, len(finalists), size):
                         ids = finalists[i0:i0 + size]
                         kk = min(k, max(2, -(-k * len(ids) // len(finalists)) + 1))
-                        verdict = judge.judge([Path(i) for i in ids], label, day, kk,
-                                              judge_boxes([by_path[i] for i in ids], judge), final=True)
+                        verdict = judge_with_retry(judge, [Path(i) for i in ids], label, day, kk,
+                                                   judge_boxes([by_path[i] for i in ids], judge), final=True)
                         if verdict.error or not verdict.picks:
-                            picks = sorted(ids, key=lambda i: by_path[i].score, reverse=True)[:kk]
+                            pool = [c for c in sc if c.id in set(ids)]
+                            picks = dedup_by_score(pool, kk, args.dup_sim, args.dup_pixel)
                         else:
                             picks = verdict.picks[:kk]
                         for i in picks:
@@ -449,14 +478,15 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                         break
                     finalists = nxt
                 if len(finalists) > k:  # final round among the remaining winners
-                    verdict = judge.judge([Path(i) for i in finalists], label, day, k,
-                                          judge_boxes([by_path[i] for i in finalists], judge), final=True)
+                    verdict = judge_with_retry(judge, [Path(i) for i in finalists], label, day, k,
+                                               judge_boxes([by_path[i] for i in finalists], judge), final=True)
                     if not verdict.error and verdict.picks:
                         for i in verdict.picks[:k]:
                             by_path[i].judge_reason = verdict.reasons.get(i) or by_path[i].judge_reason
                         finalists = verdict.picks[:k]
                     else:
-                        finalists = finalists[:k]
+                        pool = [c for c in sc if c.id in set(finalists)]
+                        finalists = dedup_by_score(pool, k, args.dup_sim, args.dup_pixel)
                 chosen.update(finalists)
         for p in by_path.values():
             if p.day == day:

@@ -98,3 +98,29 @@ def test_dino_similarity_decides_duplicates_when_available():
     # without DINOv2 embeddings the CLIP embedding is used
     d = Candidate(id="d", score=1, bucket="x", emb=_unit([1, 0.01]))
     assert is_duplicate(d, [Candidate(id="e", score=1, bucket="x", emb=_unit([1, 0]))], 0.92, 0.9)
+
+
+def test_diverse_preselection_covers_visual_variety_not_only_top_scores():
+    from fotosort.selection import ScenedCandidate, diverse_preselection
+    rng = np.random.default_rng(7)
+    # cluster A: 20 near-identical high scorers; cluster B: 20 average frames of a different moment
+    def mk(prefix, base, axis):
+        return [ScenedCandidate(id=f"{prefix}{i}", score=base - i * 0.01, bucket="x", emb=_unit([1, 0]),
+                                sig=_unit(rng.normal(size=16)), dino=_unit(axis + [rng.normal() * 0.02]), scene=0)
+                for i in range(20)]
+
+    a, b = mk("a", 2.0, [1, 0]), mk("b", 0.5, [0, 1])
+    pre = diverse_preselection(a + b, cap=10)
+    assert len(pre) == 10 and "a0" in pre
+    assert any(i.startswith("b") for i in pre)          # the other moment is represented
+    assert sum(i.startswith("b") for i in pre) >= 1 and sum(i.startswith("a") for i in pre) >= 5
+
+
+def test_dedup_by_score_fallback_skips_twins():
+    from fotosort.selection import dedup_by_score
+    sig = _unit(np.arange(16, dtype=np.float32))
+    cands = [Candidate(id="t1", score=1.0, bucket="x", emb=_unit([1, 0]), sig=sig, dino=_unit([1, 0])),
+             Candidate(id="t2", score=0.9, bucket="x", emb=_unit([1, 0]), sig=sig, dino=_unit([1, 0.01])),
+             Candidate(id="u", score=0.5, bucket="x", emb=_unit([0, 1]),
+                       sig=_unit(np.arange(16, 0, -1, dtype=np.float32)), dino=_unit([0, 1]))]
+    assert dedup_by_score(cands, 2, 0.89, 0.9) == ["t1", "u"]
