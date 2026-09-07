@@ -13,6 +13,7 @@ SIDECAR_EXT = RAW_EXT | {".xmp", ".heic"}
 EXIF_IFD = 0x8769
 TAG_DATETIME_ORIGINAL = 36867
 TAG_DATETIME = 306
+TAG_ISO = 34855
 
 
 def is_raw(path: Path) -> bool:
@@ -42,32 +43,62 @@ def find_jpegs(root: Path, recursive: bool, exclude_dirs: set[str]) -> list[Path
     return find_images(root, recursive, exclude_dirs, include_raw=False)
 
 
-def _raw_datetime(path: Path) -> str | None:
+def _raw_tags(path: Path) -> tuple[str | None, int | None]:
     import exifread  # handles TIFF-based RAW containers (ORF, NEF, CR2, ARW, DNG, ...)
 
     with open(path, "rb") as f:
-        tags = exifread.process_file(f, details=False, stop_tag="EXIF DateTimeOriginal")
-    tag = tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime")
-    return str(tag) if tag else None
+        tags = exifread.process_file(f, details=False)
+    when = tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime")
+    iso = tags.get("EXIF ISOSpeedRatings")
+    try:
+        iso_v = int(str(iso).strip("[]").split(",")[0]) if iso else None
+    except ValueError:
+        iso_v = None
+    return (str(when) if when else None), iso_v
 
 
-def capture_time(path: Path) -> datetime | None:
-    """EXIF DateTimeOriginal, falling back to DateTime, then file mtime."""
+def read_exif(path: Path) -> tuple[datetime | None, int | None]:
+    """(capture time, ISO). Time from EXIF DateTimeOriginal, then DateTime, then
+    file mtime; ISO from EXIF or None."""
+    when, iso = None, None
     try:
         if is_raw(path):
-            raw = _raw_datetime(path)
+            raw, iso = _raw_tags(path)
         else:
             with Image.open(path) as img:
                 exif = img.getexif()
-                raw = exif.get_ifd(EXIF_IFD).get(TAG_DATETIME_ORIGINAL) or exif.get(TAG_DATETIME)
+                ifd = exif.get_ifd(EXIF_IFD)
+                raw = ifd.get(TAG_DATETIME_ORIGINAL) or exif.get(TAG_DATETIME)
+                iso_raw = ifd.get(TAG_ISO)
+                if isinstance(iso_raw, (tuple, list)):
+                    iso_raw = iso_raw[0] if iso_raw else None
+                iso = int(iso_raw) if iso_raw else None
         if raw:
-            return datetime.strptime(str(raw)[:19], "%Y:%m:%d %H:%M:%S")
+            when = datetime.strptime(str(raw)[:19], "%Y:%m:%d %H:%M:%S")
     except Exception:
         pass
-    try:
-        return datetime.fromtimestamp(path.stat().st_mtime)
-    except OSError:
-        return None
+    if when is None:
+        try:
+            when = datetime.fromtimestamp(path.stat().st_mtime)
+        except OSError:
+            when = None
+    return when, iso
+
+
+def capture_time(path: Path) -> datetime | None:
+    return read_exif(path)[0]
+
+
+def raw_sibling(path: Path) -> Path | None:
+    """The RAW file belonging to a JPEG: same stem next to it or in a RAW/ subfolder."""
+    if is_raw(path):
+        return path
+    for folder in (path.parent, path.parent / "RAW", path.parent / "raw"):
+        if folder.is_dir():
+            for f in folder.glob(path.stem + ".*"):
+                if is_raw(f):
+                    return f
+    return None
 
 
 def sidecars(path: Path) -> list[Path]:

@@ -7,6 +7,18 @@ All notable changes to FotoSort are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Edit benefit and preset per frame.** `edit_score` (0..100) from blown
+  highlights, crushed shadows, exposure and ISO; judged picks get the judge's
+  `edit_benefit` (low/medium/high) with a reason and a preset from a fixed
+  menu (Natural, Color Pop, Wildlife Crisp, Golden Hour Warmth, Moody Colors,
+  Low Key Dramatic, High Key, Black & White, Vignette, Portrait Soft). Both
+  in the report and as XMP keywords.
+- **RAW cull** (`--raw-cull`, `--raw-keep-benefit`, `--raw-cull-move`):
+  keep the RAWs of picks worth editing, list or move the rest into
+  `_DELETE_ME_raw`. RAW siblings are found next to the JPEG or in `RAW/`.
+- ISO is read from EXIF (JPEG and RAW) and reported.
+- Diverse preselection, judge retries and a duplicate-free fallback (see
+  the commit "Preselection covers a sighting's variety").
 - **DxO PureRAW as a pre-processing step** (`--dxo all|picks`). Processed
   twins in the `DxO` folder are found under any PureRAW naming template;
   missing ones are handed to the app (`open -a`) and awaited. The twin is

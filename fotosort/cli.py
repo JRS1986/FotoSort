@@ -16,11 +16,12 @@ import numpy as np
 from tqdm import tqdm
 
 from fotosort import cache as cache_mod
+from fotosort.editing import STYLE_TO_PRESET, benefit_band, edit_benefit
 from fotosort.group import cluster_scenes
 from fotosort.judge import Verdict
 from fotosort.labels import bucket_name, load_labels
 from fotosort.quality import exposure, load_small, sharpness, signature, to_gray
-from fotosort.scan import capture_time, find_images, is_raw, sidecars
+from fotosort.scan import find_images, is_raw, raw_sibling, read_exif, sidecars
 from fotosort.selection import (
     Candidate,
     ScenedCandidate,
@@ -45,6 +46,11 @@ class Photo:
     edge: bool = False  # that box touches the frame border
     judge_reason: str = ""
     shortlisted: bool = False
+    iso: int | None = None
+    edit_score: int = 0          # 0..100 heuristic: how much a RAW edit would gain
+    edit_band: str = ""          # low / medium / high (judge's word when judged, else from edit_score)
+    edit_why: str = ""
+    preset: str = ""
     sharpness: float = 0.0
     clip_low: float = 0.0
     clip_high: float = 0.0
@@ -127,6 +133,14 @@ def parse_args(argv=None):
                         "'all', rating 3 for judged-but-not-picked, 1 for rejected frames); existing sidecars "
                         "are left alone unless --xmp-overwrite")
     p.add_argument("--xmp-overwrite", action="store_true", help="Replace existing .xmp sidecars")
+    p.add_argument("--raw-cull", action="store_true",
+                   help="List which RAW files (same stem next to the JPEG or in RAW/) are worth keeping: those of "
+                        "picks whose edit benefit is at least --raw-keep-benefit. Writes raw_keep.txt and "
+                        "raw_cull.txt into the folder")
+    p.add_argument("--raw-keep-benefit", default="low", choices=["low", "medium", "high"],
+                   help="Keep the RAW of a pick only if its edit benefit is at least this")
+    p.add_argument("--raw-cull-move", action="store_true",
+                   help="With --raw-cull: move the RAWs not worth keeping into a _DELETE_ME_raw folder (never deletes)")
     p.add_argument("--detector", default="yolov8m.pt", help="YOLOv8 weights for subject detection (n/s/m/l)")
     p.add_argument("--aesthetic-weight", type=float, default=0.6, help="Weight of aesthetics vs sharpness (0..1)")
     p.add_argument("--blur-ratio", type=float, default=0.15, help="Reject if sharpness < ratio * day median")
@@ -363,6 +377,71 @@ def apply_person_override(photos: list[Photo], min_area: float) -> None:
             p.label, p.label_prob = "people", max(p.label_prob, p.person)
 
 
+def apply_edit_verdict(ph: Photo, verdict, i: str) -> None:
+    e = (verdict.edits or {}).get(i)
+    if not e:
+        return
+    if e.get("benefit"):
+        ph.edit_band, ph.edit_why = e["benefit"], e.get("why", "")
+    if e.get("preset"):
+        ph.preset = e["preset"]
+
+
+def editing_advice(photos: list[Photo], emb, args) -> None:
+    """Edit benefit for every frame from its statistics; for picks without a
+    judge verdict also a preset from the detected style."""
+    from fotosort.enhance import STYLE_PROMPTS, detect_style, image_stats
+
+    for ph in photos:
+        if ph.emb is None:
+            continue
+        ph.edit_score = edit_benefit(ph.clip_high, ph.clip_low, ph.mean, None, ph.iso)
+        if not ph.edit_band:
+            ph.edit_band = benefit_band(ph.edit_score)
+    need = [ph for ph in photos if ph.selected and not ph.preset]
+    if not need or emb is None:
+        return
+    style_emb = emb.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
+    for ph in need:
+        try:
+            stats = image_stats(np.asarray(load_small(str(ph.source or ph.path), 512), dtype=np.float32))
+        except OSError:
+            continue
+        style = "portrait" if ph.person >= args.person_area > 0 else detect_style(ph.emb, style_emb, stats)
+        ph.preset = STYLE_TO_PRESET.get(style, "Natural")
+
+
+def raw_cull(photos: list[Photo], root: Path, args) -> None:
+    """Which RAW files to keep: those of picks whose edit benefit reaches
+    --raw-keep-benefit. Writes raw_keep.txt / raw_cull.txt; with
+    --raw-cull-move the culled RAWs go into _DELETE_ME_raw (nothing is deleted)."""
+    order = {"low": 0, "medium": 1, "high": 2}
+    keep, cull, missing = [], [], 0
+    for ph in photos:
+        raw = raw_sibling(ph.path)
+        if raw is None:
+            missing += 1
+            continue
+        if ph.selected and order.get(ph.edit_band, 0) >= order[args.raw_keep_benefit]:
+            keep.append(raw)
+        else:
+            cull.append(raw)
+    (root / "raw_keep.txt").write_text("\n".join(str(p) for p in keep) + "\n")
+    (root / "raw_cull.txt").write_text("\n".join(str(p) for p in cull) + "\n")
+    size = sum(p.stat().st_size for p in cull if p.exists()) / 1e9
+    print(f"RAW cull: keep {len(keep)}, cull {len(cull)} ({size:.1f} GB)" +
+          (f", {missing} frames have no RAW" if missing else "") + f"; lists in {root}")
+    if args.raw_cull_move and cull:
+        dest = root / "_DELETE_ME_raw"
+        dest.mkdir(exist_ok=True)
+        moved = 0
+        for p in cull:
+            if p.exists():
+                shutil.move(str(p), str(unique_dest(dest, p, p.parent)))
+                moved += 1
+        print(f"Moved {moved} RAW files into {dest}; delete that folder when you are sure")
+
+
 def judge_with_retry(judge, paths, label, day, k, boxes, final=False, attempts: int = 3):
     """A transient network error must not decide a group's picks: retry with a pause."""
     import time
@@ -456,6 +535,7 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                     for i in verdict.picks[:kk]:
                         finalists.append(i)
                         by_path[i].judge_reason = verdict.reasons.get(i, "")
+                        apply_edit_verdict(by_path[i], verdict, i)
                 # knock-out rounds: while too many finalists for one request, judge them in chunks again
                 while len(finalists) > max(k, args.judge_chunk):
                     n_chunks = -(-len(finalists) // args.judge_chunk)
@@ -473,6 +553,7 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                             picks = verdict.picks[:kk]
                         for i in picks:
                             by_path[i].judge_reason = verdict.reasons.get(i) or by_path[i].judge_reason
+                            apply_edit_verdict(by_path[i], verdict, i)
                         nxt += picks
                     if len(nxt) >= len(finalists):
                         break
@@ -483,6 +564,7 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
                     if not verdict.error and verdict.picks:
                         for i in verdict.picks[:k]:
                             by_path[i].judge_reason = verdict.reasons.get(i) or by_path[i].judge_reason
+                            apply_edit_verdict(by_path[i], verdict, i)
                         finalists = verdict.picks[:k]
                     else:
                         pool = [c for c in sc if c.id in set(finalists)]
@@ -496,7 +578,8 @@ def select_photos(photos: list[Photo], args, judge=None) -> dict[tuple[str, str]
 
 def write_report(photos: list[Photo], path: Path) -> None:
     cols = ["file", "datetime", "day", "label", "label_prob", "person", "subject", "edge", "scene", "sharpness",
-            "clip_low", "clip_high", "aesthetic", "score", "reject", "shortlisted", "selected", "judge_reason"]
+            "clip_low", "clip_high", "aesthetic", "score", "reject", "shortlisted", "selected", "judge_reason",
+            "iso", "edit_score", "edit_benefit", "edit_why", "preset"]
     with open(path, "w", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(cols)
@@ -506,6 +589,7 @@ def write_report(photos: list[Photo], path: Path) -> None:
                 f"{ph.label_prob:.2f}", f"{ph.person:.3f}", f"{ph.subject:.3f}", int(ph.edge), ph.scene,
                 f"{ph.sharpness:.1f}", f"{ph.clip_low:.3f}", f"{ph.clip_high:.3f}", f"{ph.aesthetic:.2f}",
                 f"{ph.score:.3f}", ph.reject, int(ph.shortlisted), int(ph.selected), ph.judge_reason,
+                ph.iso or "", ph.edit_score, ph.edit_band, ph.edit_why, ph.preset,
             ])
 
 
@@ -525,6 +609,10 @@ def write_sidecars(photos: list[Photo], args) -> None:
         else:
             continue
         keywords = ["FotoSort", f"FotoSort|{ph.label}"] + (["FotoSort|Pick"] if ph.selected else [])
+        if ph.selected and ph.preset:
+            keywords.append(f"FotoSort|Preset|{ph.preset}")
+        if ph.selected and ph.edit_band:
+            keywords.append(f"FotoSort|RAW edit {ph.edit_band}")
         try:
             ok = write_sidecar(ph.path, rating, keywords, ph.judge_reason if ph.selected else "", label,
                                overwrite=args.xmp_overwrite)
@@ -569,7 +657,7 @@ def main(argv=None) -> int:
     if args.dxo == "all" and not args.apply_report:
         attach_dxo(photos, root, args, only=None)
     for ph in tqdm(photos, unit="img", desc="Reading EXIF", leave=False):
-        ph.time = capture_time(ph.path)
+        ph.time, ph.iso = read_exif(ph.path)
 
     if args.apply_report:
         return apply_report(photos, root, args)
@@ -603,10 +691,13 @@ def main(argv=None) -> int:
     if judge is not None:
         print(f"Judge tokens: {judge.usage['input']} in, {judge.usage['output']} out")
 
+    editing_advice(photos, emb, args)
     report = root / args.report
     write_report(photos, report)
     if args.xmp:
         write_sidecars(photos, args)
+    if args.raw_cull:
+        raw_cull(photos, root, args)
 
     picks = [ph for ph in photos if ph.selected]
     if args.dxo == "picks" and (args.move or args.copy):
@@ -731,12 +822,17 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
     picks = []
     for ph in photos:
         r = rows.get(str(ph.path))
+        if r:
+            ph.label = r.get("label", "")
+            ph.edit_band, ph.preset = r.get("edit_benefit", ""), r.get("preset", "")
         if r and r.get("selected") == "1":
             ph.person = float(r.get("person") or 0)
-            ph.label, ph.selected = r.get("label", ""), True
+            ph.selected = True
             picks.append(ph)
     missing = sum(1 for f, r in rows.items() if r.get("selected") == "1" and f not in {str(p.path) for p in picks})
     print(f"{len(picks)} picks from the report" + (f" ({missing} listed files no longer exist)" if missing else ""))
+    if args.raw_cull:
+        raw_cull(photos, root, args)
     if not (args.move or args.copy):
         for ph in picks:
             print(f"  {ph.path.relative_to(root)}  [{ph.label}]")

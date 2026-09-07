@@ -168,6 +168,30 @@ report's `shortlisted` column shows what the judge saw and `judge_reason` why
 it picked a frame; frames that were pixel-identical to a sibling are marked
 "twin of X" and never sent twice.
 
+### Which RAWs to keep: edit benefit, presets, RAW cull
+
+Every frame gets an **edit benefit** score (0..100, `edit_score`) from what a
+RAW file could still recover: blown highlights weigh most, then crushed
+shadows, a dark or flat exposure, and high ISO noise (ISO is read from EXIF).
+Judged picks additionally get the judge's own verdict (`edit_benefit`
+low/medium/high with a few words in `edit_why`, e.g. "sky to recover") and a
+**preset** suggestion from a fixed menu: Natural, Color Pop, Wildlife Crisp,
+Golden Hour Warmth, Moody Colors, Low Key Dramatic, High Key, Black & White,
+Vignette, Portrait Soft. Non-judged picks get a preset from the detected
+style. Both land in the report and, with `--xmp`, as keywords
+(`FotoSort|Preset|Color Pop`, `FotoSort|RAW edit high`).
+
+```bash
+fotosort /path --raw-cull                        # raw_keep.txt / raw_cull.txt: RAWs of picks vs the rest
+fotosort /path --raw-cull --raw-keep-benefit medium   # keep a pick's RAW only if editing it pays
+fotosort /path --apply-report --raw-cull --raw-cull-move   # move the culled RAWs into _DELETE_ME_raw
+```
+
+`--raw-cull` finds each frame's RAW (same stem next to it or in a `RAW/`
+subfolder) and keeps the RAWs of picks whose benefit reaches
+`--raw-keep-benefit`. `--raw-cull-move` moves the others into a
+`_DELETE_ME_raw` folder for you to empty; nothing is ever deleted.
+
 ### Lightroom, Capture One, Bridge, digiKam: XMP sidecars
 
 ```bash
@@ -240,6 +264,7 @@ EXIF and colour profile.
 | `--key-file` | | read the judge API key from a `.env` or YAML file |
 | `--judge-base-url` | | OpenAI-compatible server for a local judge (needs `--judge-model`) |
 | `--xmp` / `--xmp-overwrite` | off | write XMP sidecars for `picks` or `all`; replace existing ones |
+| `--raw-cull` / `--raw-keep-benefit` / `--raw-cull-move` | off / low / off | list RAWs to keep vs cull; keep threshold; move the culled ones to `_DELETE_ME_raw` |
 | `--taste-dir` / `--taste-weight` | off / 0.5 | folder of photos you love; frames resembling them get up to this bonus |
 | `--enhance` | | enhance the picks (see above) |
 | `--enhance-strength` / `--enhance-style` | 1.0 / auto | global strength; force one style |
@@ -258,6 +283,7 @@ fotosort/
   embed.py    CLIP embeddings, aesthetic head, zero-shot labels, DINOv2 sameness, YOLO subject detection
   xmp.py      XMP sidecar writer
   dxo.py      DxO PureRAW twins: find, hand off, wait
+  editing.py  edit-benefit score and the preset menu
   group.py    scene / burst clustering by time and similarity
   selection.py  score-based selection, judge preselection and tournament chunking
   judge.py    the vision-model judge (OpenAI / Anthropic), prompts and verdict parsing

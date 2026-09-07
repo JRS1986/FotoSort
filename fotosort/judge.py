@@ -18,6 +18,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from fotosort.editing import PRESETS
 from fotosort.quality import load_small
 
 DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "anthropic": "claude-opus-5"}
@@ -54,15 +55,22 @@ PROMPT = (
     "enough decent, distinct frames; drop a frame only when it is clearly worse than another keeper, "
     "soft, shows a tiny or cut-off subject, or is a near-duplicate. Unless every frame is unusable, "
     "always keep at least the single best one. "
-    'Reply with JSON only, in this shape: {{"picks": [{{"photo": 3, "reason": "short reason"}}]}}'
+    "For each keeper also say whether developing its RAW file would clearly improve it "
+    "(edit_benefit: low / medium / high, with a few words why: e.g. blown sky to recover, "
+    "shadows to lift, noise to clean, or nothing to gain), and choose the one preset from "
+    "this list that fits it best: " + ", ".join(PRESETS) + ". "
+    'Reply with JSON only, in this shape: {{"picks": [{{"photo": 3, "reason": "short reason", '
+    '"edit_benefit": "high", "edit_why": "few words", "preset": "Color Pop"}}]}}'
 )
 
 FINAL_PROMPT = (
     "These {n} photos are the finalists from a larger set taken on {day} showing: {subject}. Each one "
     "was already judged good in its own batch. Now choose the final {k} for the album: the strongest, "
     "and as different from each other as possible. Where a photo has a '100% crop' after it, use it to "
-    "judge sharpness. "
-    'Reply with JSON only: {{"picks": [{{"photo": 3, "reason": "short reason"}}]}}'
+    "judge sharpness. For each keeper also give edit_benefit (low / medium / high: would developing the "
+    "RAW clearly improve it), edit_why (few words) and the best preset from: " + ", ".join(PRESETS) + ". "
+    'Reply with JSON only: {{"picks": [{{"photo": 3, "reason": "short reason", '
+    '"edit_benefit": "high", "edit_why": "few words", "preset": "Color Pop"}}]}}'
 )
 
 RETRY_PROMPT = (
@@ -77,6 +85,7 @@ class Verdict:
     picks: list[str]            # candidate ids in preference order
     reasons: dict[str, str]     # id -> reason
     error: str | None = None    # set when the judge could not run; caller falls back
+    edits: dict[str, dict] | None = None  # id -> {"benefit": low|medium|high, "why": str, "preset": str}
 
 
 def _to_b64(img: Image.Image) -> str:
@@ -117,7 +126,7 @@ def parse_verdict(text: str, ids: list[str]) -> Verdict:
         data = json.loads(m.group(0))
     except json.JSONDecodeError as e:
         return Verdict([], {}, error=f"bad JSON: {e}")
-    picks, reasons = [], {}
+    picks, reasons, edits = [], {}, {}
     for item in data.get("picks", []):
         try:
             n = int(item.get("photo") if isinstance(item, dict) else item)
@@ -126,7 +135,14 @@ def parse_verdict(text: str, ids: list[str]) -> Verdict:
         if 1 <= n <= len(ids) and ids[n - 1] not in picks:
             picks.append(ids[n - 1])
             reasons[ids[n - 1]] = str(item.get("reason", "")) if isinstance(item, dict) else ""
-    return Verdict(picks, reasons)
+            if isinstance(item, dict):
+                benefit = str(item.get("edit_benefit", "")).lower().strip()
+                preset = str(item.get("preset", "")).strip()
+                preset = next((p for p in PRESETS if p.lower() == preset.lower()), "")
+                if benefit in {"low", "medium", "high"} or preset:
+                    edits[ids[n - 1]] = {"benefit": benefit if benefit in {"low", "medium", "high"} else "",
+                                         "why": str(item.get("edit_why", "")).strip(), "preset": preset}
+    return Verdict(picks, reasons, edits=edits or None)
 
 
 class Judge:
