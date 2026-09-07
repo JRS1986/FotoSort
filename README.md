@@ -52,8 +52,10 @@ Then the folder is organised:
    photo editor would: subject visible and sharp, faces not in shadow, best of
    each burst, as varied as possible. By default (`--judge-coverage
    preselect`) the scores first narrow each group to `--preselect` times its
-   budget (default 3x, at least 12 frames), taking the best frame of every
-   burst first, and the judge runs its tournament on those: time-ordered
+   budget (default 3x, at least 12 frames and at least half the group, so a
+   long sighting keeps its distinct moments), taking the best frame of every
+   burst first and then the frames most unlike what is already in, and the
+   judge runs its tournament on those: time-ordered
    chunks of `--judge-chunk` frames, each sending on its share of the budget,
    knock-out rounds until a final. That is roughly a quarter of the tokens of
    `--judge-coverage full`, where the judge sees every distinct frame. Every
@@ -123,6 +125,7 @@ fotosort /path --labels labels/whale_watching.txt --label-mode image --judge \  
     --judge-hint "Whale-watching trip: keepers show the animal itself, not just a blow or splash"
 fotosort /path --copy --enhance --layout species # one subfolder per animal: Highlights/zebra/, Highlights/lion/, ...
 fotosort /path --dxo picks --copy --enhance      # PureRAW on the picks, then enhance from the DxO DNGs
+fotosort /path --include P9051472,P9050886       # frames you know you want, picked regardless
 fotosort /path --apply-report --copy --enhance   # re-apply (possibly hand-edited) report picks, no re-analysis
 fotosort enhance /any/folder                     # enhance any folder into <folder>/Enhanced
 ```
@@ -258,7 +261,8 @@ EXIF and colour profile.
 | `--judge` | off | let a vision model choose the final picks |
 | `--judge-provider` / `--judge-model` | openai / gpt-5.6-sol | API and model (`anthropic` / `claude-opus-5`) |
 | `--judge-coverage` / `--judge-chunk` | preselect / 24 | `preselect`: score-based preselection then the tournament; `full`: every frame |
-| `--preselect` / `--preselect-min` | 3 / 12 | preselection size as a multiple of the group budget, and its minimum |
+| `--preselect` / `--preselect-min` / `--preselect-share` | 3 / 12 / 0.5 | preselection size: a multiple of the group budget, a minimum, and a minimum share of the group |
+| `--include` | | frames that must be picked regardless (stems, names, or `@file`) |
 | `--judge-detail` | high | image detail for the OpenAI judge (`low` is ~10x cheaper) |
 | `--judge-hint` | | a sentence or two about this shoot for the judge |
 | `--key-file` | | read the judge API key from a `.env` or YAML file |

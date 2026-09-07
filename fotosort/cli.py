@@ -115,8 +115,12 @@ def parse_args(argv=None):
                    help="Preselection size as a multiple of the group's budget (at least --preselect-min frames, "
                         "and at least --preselect-share of the group)")
     p.add_argument("--preselect-min", type=int, default=12, help="Minimum preselection size per group")
-    p.add_argument("--preselect-share", type=float, default=0.25,
-                   help="Preselection is at least this share of a group, so a 400-frame sighting sends ~100 frames")
+    p.add_argument("--preselect-share", type=float, default=0.5,
+                   help="Preselection is at least this share of a group (default half), so a long sighting with "
+                        "many distinct moments still reaches the judge; 0.25 is the frugal setting")
+    p.add_argument("--include", default="",
+                   help="Frames that must be picked regardless of scores or judge: comma-separated stems or file "
+                        "names, or @file with one per line (e.g. --include P9051472,P9050886)")
     p.add_argument("--judge-chunk", type=int, default=24, help="Frames per judge request in full coverage")
     p.add_argument("--taste-dir", help="Folder with photos you love; frames that resemble them get a score bonus")
     p.add_argument("--taste-weight", type=float, default=0.5, help="Max bonus from --taste-dir")
@@ -375,6 +379,25 @@ def apply_person_override(photos: list[Photo], min_area: float) -> None:
     for p in photos:
         if p.person >= min_area:
             p.label, p.label_prob = "people", max(p.label_prob, p.person)
+
+
+def forced_includes(photos: list[Photo], spec: str) -> list[Photo]:
+    """Resolve --include (stems, file names, or @file) to photos; they are never
+    rejected and always end up selected."""
+    if not spec:
+        return []
+    if spec.startswith("@"):
+        names = [ln.strip() for ln in Path(spec[1:]).expanduser().read_text().splitlines() if ln.strip()]
+    else:
+        names = [n.strip() for n in spec.split(",") if n.strip()]
+    wanted = {Path(n).stem.lower() for n in names}
+    found = [ph for ph in photos if ph.path.stem.lower() in wanted]
+    for ph in found:
+        ph.reject = ""
+    missing = wanted - {ph.path.stem.lower() for ph in found}
+    if missing:
+        print(f"--include: not found in this folder: {', '.join(sorted(missing))}")
+    return found
 
 
 def apply_edit_verdict(ph: Photo, verdict, i: str) -> None:
@@ -673,6 +696,7 @@ def main(argv=None) -> int:
     labels = load_labels(args.labels)
     assign_scenes_and_labels(photos, emb.text_embeddings(labels), labels, args)
     score_and_reject(photos, args)
+    forced = forced_includes(photos, args.include)
     if args.taste_dir:
         taste_bonus(photos, args.taste_dir, args.taste_weight, emb)
     judge = None
@@ -688,6 +712,8 @@ def main(argv=None) -> int:
             judge.detector = SubjectDetector(device=emb.device, weights=args.detector)
         print(f"Judging shortlists with {judge.model} ...")
     buckets = select_photos(photos, args, judge)
+    for ph in forced:
+        ph.selected, ph.judge_reason = True, "forced by --include"
     if judge is not None:
         print(f"Judge tokens: {judge.usage['input']} in, {judge.usage['output']} out")
 

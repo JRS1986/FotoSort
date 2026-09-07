@@ -30,3 +30,13 @@ def test_layout_dir_variants():
     assert layout_dir(out, ph, "day-species") == out / "2026-09-01" / "rock hyrax (dassie)"
     ph.label = "a/b:c"
     assert layout_dir(out, ph, "species") == out / "a_b_c"
+
+
+def test_forced_includes_resolve_stems_names_and_files(tmp_path, capsys):
+    from fotosort.cli import forced_includes
+    photos = [Photo(path=Path("d/P9051472.JPG"), key="a", reject="blurry"), Photo(path=Path("d/P9050886.JPG"), key="b")]
+    got = forced_includes(photos, "p9051472,P9050886.JPG,nope")
+    assert [p.path.stem for p in got] == ["P9051472", "P9050886"] and got[0].reject == ""
+    assert "nope" in capsys.readouterr().out
+    (tmp_path / "list.txt").write_text("P9050886\n")
+    assert [p.path.stem for p in forced_includes(photos, f"@{tmp_path / 'list.txt'}")] == ["P9050886"]

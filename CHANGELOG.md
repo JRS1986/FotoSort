@@ -17,6 +17,10 @@ All notable changes to FotoSort are documented here. The format follows
   keep the RAWs of picks worth editing, list or move the rest into
   `_DELETE_ME_raw`. RAW siblings are found next to the JPEG or in `RAW/`.
 - ISO is read from EXIF (JPEG and RAW) and reported.
+- `--include`: frames that must be picked regardless of scores or judge.
+- Preselection defaults to at least half of each group
+  (`--preselect-share 0.5`); a game-drive folder showed that a quarter
+  dropped whole bursts of a long lion sighting before the judge saw them.
 - Diverse preselection, judge retries and a duplicate-free fallback (see
   the commit "Preselection covers a sighting's variety").
 - **DxO PureRAW as a pre-processing step** (`--dxo all|picks`). Processed
