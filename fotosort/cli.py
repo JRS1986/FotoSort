@@ -831,6 +831,21 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
             picks.append(ph)
     missing = sum(1 for f, r in rows.items() if r.get("selected") == "1" and f not in {str(p.path) for p in picks})
     print(f"{len(picks)} picks from the report" + (f" ({missing} listed files no longer exist)" if missing else ""))
+    if any(ph.selected and not ph.edit_band for ph in photos):
+        # report from an older run: fill the heuristic benefit (and a style preset) from the cache
+        cached = cache_mod.load(root)
+        for ph in photos:
+            c = cached.get(ph.key)
+            if c is None:
+                continue
+            ph.emb, ph.clip_low, ph.clip_high, ph.mean = c["emb"], c["clip_low"], c["clip_high"], c["mean"]
+            ph.person = c["person"]
+        emb_for_style = None
+        if any(ph.selected and not ph.preset for ph in photos):
+            from fotosort.embed import Embedder
+
+            emb_for_style = Embedder()
+        editing_advice(photos, emb_for_style, args)
     if args.raw_cull:
         raw_cull(photos, root, args)
     if not (args.move or args.copy):
