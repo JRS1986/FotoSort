@@ -40,3 +40,20 @@ def test_forced_includes_resolve_stems_names_and_files(tmp_path, capsys):
     assert "nope" in capsys.readouterr().out
     (tmp_path / "list.txt").write_text("P9050886\n")
     assert [p.path.stem for p in forced_includes(photos, f"@{tmp_path / 'list.txt'}")] == ["P9050886"]
+
+
+def test_apply_report_survives_a_folder_rename(tmp_path):
+    from PIL import Image
+
+    from fotosort.cli import apply_report, parse_args
+    old = tmp_path / "old"
+    old.mkdir()
+    Image.new("RGB", (32, 32), (10, 20, 30)).save(old / "IMG_1.jpg")
+    (old / "fotosort_report.csv").write_text(
+        "file,label,selected,person,edit_benefit,preset\n" f"{old / 'IMG_1.jpg'},zebra,1,0,low,Natural\n")
+    new = tmp_path / "new"
+    old.rename(new)
+    args = parse_args([str(new), "--apply-report"])
+    photos = [Photo(path=new / "IMG_1.jpg", key="k")]
+    assert apply_report(photos, new, args) == 0
+    assert photos[0].selected and photos[0].label == "zebra"

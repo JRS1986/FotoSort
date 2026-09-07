@@ -845,9 +845,11 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
         return 2
     with open(report, newline="") as f:
         rows = {r["file"]: r for r in csv.DictReader(f)}
+    # the folder may have been renamed or moved since the report was written: match by relative path, then name
+    by_name = {Path(k).name: v for k, v in rows.items()}
     picks = []
     for ph in photos:
-        r = rows.get(str(ph.path))
+        r = rows.get(str(ph.path)) or by_name.get(ph.path.name)
         if r:
             ph.label = r.get("label", "")
             ph.edit_band, ph.preset = r.get("edit_benefit", ""), r.get("preset", "")
@@ -855,7 +857,8 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
             ph.person = float(r.get("person") or 0)
             ph.selected = True
             picks.append(ph)
-    missing = sum(1 for f, r in rows.items() if r.get("selected") == "1" and f not in {str(p.path) for p in picks})
+    missing = sum(1 for f, r in rows.items() if r.get("selected") == "1"
+                  and Path(f).name not in {p.path.name for p in picks})
     print(f"{len(picks)} picks from the report" + (f" ({missing} listed files no longer exist)" if missing else ""))
     if any(ph.selected and not ph.edit_band for ph in photos):
         # report from an older run: fill the heuristic benefit (and a style preset) from the cache
