@@ -34,6 +34,15 @@ def bucket_name(label: str) -> str:
     return LABEL_GROUPS.get(label, label)
 
 
+PEOPLE_WORDS = ("person", "people", "child", "selfie", "diver", "portrait", "family", "tourist")
+
+
+def is_people_label(label: str) -> bool:
+    """Labels whose CLIP probability counts as evidence of a person in the frame."""
+    low = label.lower()
+    return bucket_name(label) == "people" or any(w in low for w in PEOPLE_WORDS)
+
+
 def load_labels(path: str | None) -> list[str]:
     if not path:
         return DEFAULT_LABELS

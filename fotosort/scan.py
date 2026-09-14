@@ -23,6 +23,7 @@ def is_raw(path: Path) -> bool:
 def find_images(root: Path, recursive: bool, exclude_dirs: set[str], include_raw: bool = True) -> list[Path]:
     """JPEGs, plus (if `include_raw`) RAW files that have no JPEG with the same
     stem next to them, so a RAW+JPEG pair is analysed once, via the JPEG."""
+    exclude_dirs = exclude_dirs | {"Highlights", "AwardRoll", "Enhanced", "DxO", "_DELETE_ME_raw"}
     exts = JPEG_EXT | (RAW_EXT if include_raw else set())
     found: list[Path] = []
     if recursive:
@@ -36,7 +37,10 @@ def find_images(root: Path, recursive: bool, exclude_dirs: set[str], include_raw
             if p.is_file() and p.suffix.lower() in exts and not p.name.startswith("."):
                 found.append(p)
     jpeg_stems = {(p.parent, p.stem.lower()) for p in found if p.suffix.lower() in JPEG_EXT}
-    return sorted(p for p in found if not (is_raw(p) and (p.parent, p.stem.lower()) in jpeg_stems))
+    def represented_by_jpeg(p):
+        return ((p.parent, p.stem.lower()) in jpeg_stems
+                or (p.parent.name.lower() == "raw" and (p.parent.parent, p.stem.lower()) in jpeg_stems))
+    return sorted(p for p in found if not (is_raw(p) and represented_by_jpeg(p)))
 
 
 def find_jpegs(root: Path, recursive: bool, exclude_dirs: set[str]) -> list[Path]:
@@ -95,8 +99,8 @@ def raw_sibling(path: Path) -> Path | None:
         return path
     for folder in (path.parent, path.parent / "RAW", path.parent / "raw"):
         if folder.is_dir():
-            for f in folder.glob(path.stem + ".*"):
-                if is_raw(f):
+            for f in sorted(folder.iterdir()):
+                if f.is_file() and f.stem.lower() == path.stem.lower() and is_raw(f):
                     return f
     return None
 

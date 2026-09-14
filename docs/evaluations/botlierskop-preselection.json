@@ -1,0 +1,193 @@
+{
+  "dataset": "20260904-06_Botlierskop_GameDrives-HorseBackSafari",
+  "basis": "Saved rounded report scores and freshly regenerated visual features in scratch storage; no judge requests",
+  "input_frames": 1531,
+  "target_frames": 294,
+  "settings": {
+    "0.0": {
+      "initial_shortlisted": 48,
+      "focus_groups": [
+        {
+          "day": "2026-09-05",
+          "label": "hippopotamus",
+          "distinct": 197,
+          "shortlist": 27,
+          "keeper_budget": 9
+        },
+        {
+          "day": "2026-09-05",
+          "label": "lion",
+          "distinct": 97,
+          "shortlist": 21,
+          "keeper_budget": 7
+        }
+      ]
+    },
+    "0.25": {
+      "initial_shortlisted": 75,
+      "focus_groups": [
+        {
+          "day": "2026-09-05",
+          "label": "hippopotamus",
+          "distinct": 197,
+          "shortlist": 50,
+          "keeper_budget": 9
+        },
+        {
+          "day": "2026-09-05",
+          "label": "lion",
+          "distinct": 97,
+          "shortlist": 25,
+          "keeper_budget": 7
+        }
+      ]
+    },
+    "0.5": {
+      "initial_shortlisted": 148,
+      "focus_groups": [
+        {
+          "day": "2026-09-05",
+          "label": "hippopotamus",
+          "distinct": 197,
+          "shortlist": 99,
+          "keeper_budget": 9
+        },
+        {
+          "day": "2026-09-05",
+          "label": "lion",
+          "distinct": 97,
+          "shortlist": 49,
+          "keeper_budget": 7
+        }
+      ]
+    },
+    "0.75": {
+      "initial_shortlisted": 221,
+      "focus_groups": [
+        {
+          "day": "2026-09-05",
+          "label": "hippopotamus",
+          "distinct": 197,
+          "shortlist": 148,
+          "keeper_budget": 9
+        },
+        {
+          "day": "2026-09-05",
+          "label": "lion",
+          "distinct": 97,
+          "shortlist": 73,
+          "keeper_budget": 7
+        }
+      ]
+    },
+    "1.0": {
+      "initial_shortlisted": 294,
+      "focus_groups": [
+        {
+          "day": "2026-09-05",
+          "label": "hippopotamus",
+          "distinct": 197,
+          "shortlist": 197,
+          "keeper_budget": 9
+        },
+        {
+          "day": "2026-09-05",
+          "label": "lion",
+          "distinct": 97,
+          "shortlist": 97,
+          "keeper_budget": 7
+        }
+      ]
+    }
+  },
+  "favorites": {
+    "P9051472.JPG": {
+      "0.0": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 167
+      },
+      "0.25": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 167
+      },
+      "0.5": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 167
+      },
+      "0.75": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 167
+      },
+      "1.0": {
+        "shortlisted": true,
+        "reason": "All distinct frames fit",
+        "rank_by_combined_score": 167
+      }
+    },
+    "P9051008.JPG": {
+      "0.0": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 26
+      },
+      "0.25": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 26
+      },
+      "0.5": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 26
+      },
+      "0.75": {
+        "shortlisted": true,
+        "reason": "Quality and visual coverage",
+        "rank_by_combined_score": 26
+      },
+      "1.0": {
+        "shortlisted": true,
+        "reason": "All distinct frames fit",
+        "rank_by_combined_score": 26
+      }
+    },
+    "P9050886.JPG": {
+      "0.0": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 27
+      },
+      "0.25": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 27
+      },
+      "0.5": {
+        "shortlisted": false,
+        "reason": "Outside judge shortlist",
+        "rank_by_combined_score": 27
+      },
+      "0.75": {
+        "shortlisted": true,
+        "reason": "Quality and visual coverage",
+        "rank_by_combined_score": 27
+      },
+      "1.0": {
+        "shortlisted": true,
+        "reason": "All distinct frames fit",
+        "rank_by_combined_score": 27
+      }
+    }
+  },
+  "baseline_replay": {
+    "logged_shortlist": 48,
+    "replayed_shortlist": 48,
+    "exact_membership_match": true,
+    "logged_only": [],
+    "replayed_only": []
+  }
+}

@@ -142,6 +142,8 @@ class SubjectDetector:
         frame border)."""
         if not images:
             return []
+        from fotosort.burst import valid_boxes
+
         results = self.model.predict(images, imgsz=640, conf=self.conf, verbose=False, device=self.device)
         out = []
         for r in results:
@@ -149,19 +151,22 @@ class SubjectDetector:
             person = subject = 0.0
             edge = False
             box = None
+            boxes = []
             for b in r.boxes:
                 cls, conf = r.names[int(b.cls)], float(b.conf)
                 if cls not in SUBJECT_CLASSES:
                     continue
                 x1, y1, x2, y2 = b.xyxy[0].tolist()
                 frac = (x2 - x1) * (y2 - y1) / (w * h)
+                boxes.append((x1 / w, y1 / h, x2 / w, y2 / h))
                 if cls == "person" and conf >= 0.5:
                     person = max(person, frac)
                 if frac > subject:
                     subject = frac
                     edge = x1 < 3 or y1 < 3 or x2 > w - 3 or y2 > h - 3
                     box = (x1 / w, y1 / h, x2 / w, y2 / h)
-            out.append({"person": float(person), "subject": float(subject), "edge": bool(edge), "box": box})
+            out.append({"person": float(person), "subject": float(subject), "edge": bool(edge), "box": box,
+                        "boxes": valid_boxes(boxes)})
         return out
 
 
@@ -173,3 +178,4 @@ def classify(emb: np.ndarray, text_emb: np.ndarray, labels: list[str]) -> tuple[
     p /= p.sum(axis=1, keepdims=True)
     idx = p.argmax(axis=1)
     return [labels[i] for i in idx], p[np.arange(len(idx)), idx]
+

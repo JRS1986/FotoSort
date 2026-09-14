@@ -1,0 +1,623 @@
+{
+  "method": "Local replay retaining saved scores/labels/scenes/moments, with new crop features and bursts. Both selectors receive the same available sources and 50% caps; no judge calls or forced includes.",
+  "settings": {
+    "preselect_share": 0.5,
+    "quality_share": 0.4,
+    "burst_share": 0.4,
+    "burst_gap_seconds": 3,
+    "burst_span_seconds": 12,
+    "view_split_similarity": 0.75,
+    "minimum_semantic_range": 0.005,
+    "burst_alternatives": true
+  },
+  "datasets": [
+    {
+      "name": "Botlierskop",
+      "available_inputs": 294,
+      "missing_original_report_sources": 0,
+      "source_sizes_and_mtimes_unchanged": true,
+      "elapsed_seconds": 4.4,
+      "groups": [
+        {
+          "experience": "all",
+          "day": "2026-09-05",
+          "label": "hippopotamus",
+          "inputs": 197,
+          "shortlist": 99,
+          "burst_sequences": 18,
+          "retained_candidates": 86,
+          "new_candidates": 13,
+          "previous_judge_picks_in_old_shortlist": 9,
+          "previous_judge_picks_in_new_shortlist": 9,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "Scene representative": 3,
+            "Independent aesthetic nomination": 1,
+            "Independent focus nomination": 1,
+            "Independent editorial nomination": 1,
+            "Independent composition nomination": 1,
+            "Independent distinctiveness nomination": 1,
+            "Protected quality allocation": 32,
+            "Burst representative": 3,
+            "Burst pose alternative": 19,
+            "Burst quality alternative": 13,
+            "Burst alternative: interaction": 2,
+            "Burst alternative: gesture": 2,
+            "Burst alternative: expression": 1,
+            "Moment representative": 12,
+            "Quality and visual coverage": 5,
+            "Exploration: visual novelty or signal uncertainty": 2
+          }
+        },
+        {
+          "experience": "all",
+          "day": "2026-09-05",
+          "label": "lion",
+          "inputs": 97,
+          "shortlist": 49,
+          "burst_sequences": 30,
+          "retained_candidates": 37,
+          "new_candidates": 12,
+          "previous_judge_picks_in_old_shortlist": 7,
+          "previous_judge_picks_in_new_shortlist": 7,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "Scene representative": 4,
+            "Independent focus nomination": 1,
+            "Independent editorial nomination": 1,
+            "Independent composition nomination": 1,
+            "Independent distinctiveness nomination": 1,
+            "Protected quality allocation": 12,
+            "Burst representative": 3,
+            "Burst alternative: gesture": 1,
+            "Burst pose alternative": 8,
+            "Burst alternative: expression": 3,
+            "Burst quality alternative": 4,
+            "Burst alternative: interaction": 1,
+            "Moment representative": 7,
+            "Exploration: visual novelty or signal uncertainty": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "Buffelsdrift",
+      "available_inputs": 823,
+      "missing_original_report_sources": 152,
+      "source_sizes_and_mtimes_unchanged": true,
+      "elapsed_seconds": 2.1,
+      "groups": [
+        {
+          "experience": "01_Meerkat_safari",
+          "day": "2026-09-07",
+          "label": "bontebok antelope",
+          "inputs": 11,
+          "shortlist": 11,
+          "burst_sequences": 4,
+          "retained_candidates": 11,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 4,
+          "previous_judge_picks_in_new_shortlist": 4,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 11
+          }
+        },
+        {
+          "experience": "01_Meerkat_safari",
+          "day": "2026-09-07",
+          "label": "gemsbok oryx",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 0,
+          "previous_judge_picks_in_new_shortlist": 0,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "01_Meerkat_safari",
+          "day": "2026-09-07",
+          "label": "meerkat",
+          "inputs": 68,
+          "shortlist": 34,
+          "burst_sequences": 32,
+          "retained_candidates": 28,
+          "new_candidates": 6,
+          "previous_judge_picks_in_old_shortlist": 7,
+          "previous_judge_picks_in_new_shortlist": 7,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "Scene representative": 5,
+            "Independent focus nomination": 1,
+            "Independent editorial nomination": 1,
+            "Independent composition nomination": 1,
+            "Independent distinctiveness nomination": 1,
+            "Protected quality allocation": 5,
+            "Burst representative": 5,
+            "Burst alternative: interaction": 1,
+            "Burst alternative: gesture": 2,
+            "Burst alternative: expression": 2,
+            "Burst pose alternative": 3,
+            "Burst quality alternative": 1,
+            "Moment representative": 4,
+            "Exploration: visual novelty or signal uncertainty": 2
+          }
+        },
+        {
+          "experience": "01_Meerkat_safari",
+          "day": "2026-09-07",
+          "label": "rock hyrax (dassie)",
+          "inputs": 166,
+          "shortlist": 83,
+          "burst_sequences": 55,
+          "retained_candidates": 62,
+          "new_candidates": 21,
+          "previous_judge_picks_in_old_shortlist": 8,
+          "previous_judge_picks_in_new_shortlist": 8,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "Scene representative": 3,
+            "Independent composition nomination": 1,
+            "Independent distinctiveness nomination": 1,
+            "Protected quality allocation": 28,
+            "Burst representative": 19,
+            "Burst alternative: gesture": 3,
+            "Burst alternative: interaction": 2,
+            "Burst pose alternative": 5,
+            "Burst alternative: expression": 2,
+            "Burst quality alternative": 2,
+            "Moment representative": 15,
+            "Exploration: visual novelty or signal uncertainty": 2
+          }
+        },
+        {
+          "experience": "01_Meerkat_safari",
+          "day": "2026-09-07",
+          "label": "savanna grassland",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "01_Meerkat_safari",
+          "day": "2026-09-07",
+          "label": "wildebeest",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "02_Lion_feeding",
+          "day": "2026-09-07",
+          "label": "lion",
+          "inputs": 294,
+          "shortlist": 147,
+          "burst_sequences": 53,
+          "retained_candidates": 124,
+          "new_candidates": 23,
+          "previous_judge_picks_in_old_shortlist": 12,
+          "previous_judge_picks_in_new_shortlist": 12,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "Scene representative": 4,
+            "Independent focus nomination": 1,
+            "Independent composition nomination": 1,
+            "Independent distinctiveness nomination": 1,
+            "Protected quality allocation": 52,
+            "Burst representative": 26,
+            "Burst alternative: gesture": 5,
+            "Burst alternative: interaction": 9,
+            "Burst pose alternative": 10,
+            "Burst alternative: expression": 5,
+            "Burst quality alternative": 4,
+            "Moment representative": 15,
+            "Quality and visual coverage": 12,
+            "Exploration: visual novelty or signal uncertainty": 2
+          }
+        },
+        {
+          "experience": "02_Lion_feeding",
+          "day": "2026-09-07",
+          "label": "wildebeest",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 0,
+          "previous_judge_picks_in_new_shortlist": 0,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "03_Elephant_experience",
+          "day": "2026-09-07",
+          "label": "elephant",
+          "inputs": 28,
+          "shortlist": 15,
+          "burst_sequences": 20,
+          "retained_candidates": 10,
+          "new_candidates": 5,
+          "previous_judge_picks_in_old_shortlist": 5,
+          "previous_judge_picks_in_new_shortlist": 2,
+          "displaced_previous_judge_picks": [
+            "_9072338.JPG",
+            "_9072379.JPG",
+            "_9072444.JPG"
+          ],
+          "nomination_counts": {
+            "Scene representative": 5,
+            "Independent focus nomination": 1,
+            "Burst representative": 3,
+            "Burst alternative: expression": 1,
+            "Burst alternative: gesture": 1,
+            "Burst pose alternative": 1,
+            "Moment representative": 1,
+            "Exploration: visual novelty or signal uncertainty": 2
+          }
+        },
+        {
+          "experience": "03_Elephant_experience",
+          "day": "2026-09-07",
+          "label": "flower",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "03_Elephant_experience",
+          "day": "2026-09-07",
+          "label": "hippopotamus",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "03_Elephant_experience",
+          "day": "2026-09-07",
+          "label": "people",
+          "inputs": 66,
+          "shortlist": 33,
+          "burst_sequences": 21,
+          "retained_candidates": 27,
+          "new_candidates": 6,
+          "previous_judge_picks_in_old_shortlist": 6,
+          "previous_judge_picks_in_new_shortlist": 6,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "Scene representative": 10,
+            "Independent editorial nomination": 1,
+            "Independent composition nomination": 1,
+            "Protected quality allocation": 1,
+            "Burst representative": 5,
+            "Burst alternative: interaction": 1,
+            "Burst quality alternative": 3,
+            "Burst pose alternative": 2,
+            "Burst alternative: expression": 2,
+            "Moment representative": 4,
+            "Quality and visual coverage": 1,
+            "Exploration: visual novelty or signal uncertainty": 2
+          }
+        },
+        {
+          "experience": "03_Elephant_experience",
+          "day": "2026-09-07",
+          "label": "warthog",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 0,
+          "previous_judge_picks_in_new_shortlist": 0,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "04_Elephant_walk",
+          "day": "2026-09-07",
+          "label": "elephant",
+          "inputs": 99,
+          "shortlist": 50,
+          "burst_sequences": 39,
+          "retained_candidates": 40,
+          "new_candidates": 10,
+          "previous_judge_picks_in_old_shortlist": 7,
+          "previous_judge_picks_in_new_shortlist": 6,
+          "displaced_previous_judge_picks": [
+            "_9072841.JPG"
+          ],
+          "nomination_counts": {
+            "Scene representative": 9,
+            "Independent editorial nomination": 1,
+            "Protected quality allocation": 10,
+            "Burst representative": 7,
+            "Burst alternative: interaction": 4,
+            "Burst alternative: expression": 2,
+            "Burst pose alternative": 6,
+            "Burst quality alternative": 1,
+            "Moment representative": 7,
+            "Quality and visual coverage": 1,
+            "Exploration: visual novelty or signal uncertainty": 2
+          }
+        },
+        {
+          "experience": "04_Elephant_walk",
+          "day": "2026-09-07",
+          "label": "people",
+          "inputs": 8,
+          "shortlist": 8,
+          "burst_sequences": 8,
+          "retained_candidates": 8,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 5,
+          "previous_judge_picks_in_new_shortlist": 5,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 8
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "cormorant",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "gemsbok oryx",
+          "inputs": 9,
+          "shortlist": 9,
+          "burst_sequences": 2,
+          "retained_candidates": 9,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 3,
+          "previous_judge_picks_in_new_shortlist": 3,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 9
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "insect",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "kudu antelope",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "lizard",
+          "inputs": 3,
+          "shortlist": 3,
+          "burst_sequences": 2,
+          "retained_candidates": 3,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 2,
+          "previous_judge_picks_in_new_shortlist": 2,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 3
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "meerkat",
+          "inputs": 5,
+          "shortlist": 5,
+          "burst_sequences": 2,
+          "retained_candidates": 5,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 2,
+          "previous_judge_picks_in_new_shortlist": 2,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 5
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "night sky",
+          "inputs": 11,
+          "shortlist": 11,
+          "burst_sequences": 11,
+          "retained_candidates": 11,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 5,
+          "previous_judge_picks_in_new_shortlist": 5,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 11
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "people",
+          "inputs": 14,
+          "shortlist": 14,
+          "burst_sequences": 10,
+          "retained_candidates": 14,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 5,
+          "previous_judge_picks_in_new_shortlist": 5,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 14
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "safari jeep",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "sunset or sunrise",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "warthog",
+          "inputs": 1,
+          "shortlist": 1,
+          "burst_sequences": 1,
+          "retained_candidates": 1,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 1
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "weaver bird",
+          "inputs": 24,
+          "shortlist": 15,
+          "burst_sequences": 9,
+          "retained_candidates": 12,
+          "new_candidates": 3,
+          "previous_judge_picks_in_old_shortlist": 5,
+          "previous_judge_picks_in_new_shortlist": 4,
+          "displaced_previous_judge_picks": [
+            "P9072544.JPG"
+          ],
+          "nomination_counts": {
+            "Scene representative": 3,
+            "Independent focus nomination": 1,
+            "Independent composition nomination": 1,
+            "Independent distinctiveness nomination": 1,
+            "Burst representative": 3,
+            "Burst alternative: interaction": 2,
+            "Burst alternative: expression": 1,
+            "Moment representative": 1,
+            "Exploration: visual novelty or signal uncertainty": 2
+          }
+        },
+        {
+          "experience": "05_Between_experiences",
+          "day": "2026-09-07",
+          "label": "wildebeest",
+          "inputs": 4,
+          "shortlist": 4,
+          "burst_sequences": 1,
+          "retained_candidates": 4,
+          "new_candidates": 0,
+          "previous_judge_picks_in_old_shortlist": 1,
+          "previous_judge_picks_in_new_shortlist": 1,
+          "displaced_previous_judge_picks": [],
+          "nomination_counts": {
+            "All distinct frames fit": 4
+          }
+        }
+      ]
+    }
+  ],
+  "default_membership_matches_frozen_selector_in_every_group": true
+}

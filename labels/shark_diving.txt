@@ -1,0 +1,31 @@
+# Subject labels for a shark-cage / marine boat trip (Mossel Bay style):
+# whales, dolphins, seals on rocks and in the water, fish, sharks and their teeth.
+# Use with: --labels labels/shark_diving.txt --label-mode image
+humpback whale breaching out of the water
+whale tail fluke above the water
+whale back and dorsal fin at the surface
+whale blow spout of spray
+dolphin jumping out of the water
+dolphin with a curved dorsal fin
+shark seen through the water below the surface
+shark teeth and open jaws
+shark with two dorsal fins and tail fin at the surface
+seal swimming in the water
+seal head poking out of the water
+seals lying on rocks
+school of fish underwater
+fish close-up
+bait fish and chum in the water
+seabird flying over the sea
+seagull catching a fish at the surface
+gannet or albatross
+penguin
+boat
+people on a boat
+portrait of a person
+group of people
+child
+diver in a shark cage
+open sea with waves and nothing else
+coastline, harbour or cliffs
+sunset over the ocean

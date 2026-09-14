@@ -36,7 +36,7 @@ def test_min_score_floor_blocks_weak_photos_even_with_free_slots():
     assert "c1" in picks
 
 
-def test_pixel_signature_catches_semantically_different_duplicates():
+def test_thumbnail_alone_does_not_veto_a_different_frame():
     sig = _unit(np.arange(16, dtype=np.float32) - 7.5)
     cands = [
         Candidate(id="p1", score=0.9, bucket="x", emb=_unit([1, 0, 0]), sig=sig),
@@ -44,7 +44,7 @@ def test_pixel_signature_catches_semantically_different_duplicates():
         Candidate(id="p3", score=0.7, bucket="x", emb=_unit([0, 0, 1]),
                   sig=_unit(np.random.default_rng(1).normal(size=16))),
     ]
-    assert select_day(cands, {"x": 3}, 0.95, 0.9) == ["p1", "p3"]
+    assert select_day(cands, {"x": 3}, 0.95, 0.9) == ["p1", "p2", "p3"]
 
 
 def test_empty():
@@ -59,13 +59,13 @@ def test_shortlist_covers_every_scene_before_filling_by_score():
         return _unit(np.random.default_rng(seed).normal(size=16))
 
     cands = [
-        ScenedCandidate(id="s0a", score=0.9, bucket="x", emb=_unit([1, 0]), sig=sig_a, scene=0),
-        ScenedCandidate(id="s0b", score=0.8, bucket="x", emb=_unit([1, 0]), sig=sig_a, scene=0),  # pixel twin of s0a
+        ScenedCandidate(id="s0a", score=0.9, bucket="x", emb=_unit([1, 0]), sig=sig_a, scene=0, digest="same-file"),
+        ScenedCandidate(id="s0b", score=0.8, bucket="x", emb=_unit([1, 0]), sig=sig_a, scene=0, digest="same-file"),
         ScenedCandidate(id="s0c", score=0.7, bucket="x", emb=_unit([1, 0.1]), sig=rnd(2), scene=0),
         ScenedCandidate(id="s1a", score=0.1, bucket="x", emb=_unit([1, 0.05]), sig=rnd(3), scene=1),
         ScenedCandidate(id="s2a", score=-0.9, bucket="x", emb=_unit([0, 1]), sig=rnd(4), scene=2),
     ]
-    # scene coverage first (s0a, s1a, s2a), then fill (s0c); pixel twin s0b never
+    # scene coverage first (s0a, s1a, s2a), then fill (s0c); identical copy s0b never
     assert build_shortlist(cands, cap=4) == ["s0a", "s1a", "s2a", "s0c"]
     assert build_shortlist(cands, cap=2) == ["s0a", "s1a"]
 
@@ -80,8 +80,8 @@ def test_tournament_chunks_see_every_frame_once_and_balance_sizes():
     assert sorted(flat) == sorted(c.id for c in cands) and twins == {}   # everything shown exactly once
     assert len(chunks) == 3 and max(map(len, chunks)) - min(map(len, chunks)) <= 1
     assert chunk_for_tournament([], 24) == ([], {})
-    # a pixel twin is folded onto its better-scoring sibling and reported as such
-    cands[1].sig = cands[0].sig
+    # an identical file is folded onto its better-scoring sibling and reported as such
+    cands[1].digest = cands[0].digest = "same-file"
     lo, hi = sorted([cands[0], cands[1]], key=lambda c: c.score)
     chunks, twins = chunk_for_tournament(cands, chunk=24)
     assert twins == {lo.id: hi.id} and lo.id not in [i for ch in chunks for i in ch]
