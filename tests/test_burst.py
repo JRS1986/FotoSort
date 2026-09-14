@@ -49,6 +49,7 @@ def test_interaction_view_includes_small_secondary_subject_and_is_bounded():
 
 
 def test_detector_retains_secondary_boxes_without_changing_primary_metrics():
+    pytest.importorskip("torch")  # CI installs only the light test dependencies
     from fotosort.embed import SubjectDetector
 
     detections = [SimpleNamespace(cls=cls, conf=.9, xyxy=np.array([box])) for cls, box in [
