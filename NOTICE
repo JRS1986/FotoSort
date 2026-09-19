@@ -1,0 +1,9 @@
+FotoSort
+Copyright (c) 2026 Jan R. Seyler
+
+FotoSort is licensed under the GNU Affero General Public License, version 3
+only (SPDX-License-Identifier: AGPL-3.0-only). See LICENSE for the full terms.
+
+Third-party dependencies and downloaded model weights retain their respective
+copyright notices and licenses. The required Ultralytics package and YOLO
+detector weights are available under AGPL-3.0 by default.

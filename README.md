@@ -1,7 +1,7 @@
 # FotoSort
 
 [![CI](https://github.com/JRS1986/FotoSort/actions/workflows/ci.yml/badge.svg)](https://github.com/JRS1986/FotoSort/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 Picks the best, most varied photos out of a folder with thousands of JPEGs or
 RAW files and puts them into a subfolder, or tells Lightroom about them via
@@ -600,10 +600,10 @@ and [CHANGELOG.md](CHANGELOG.md) for what has changed and what is planned.
 
 ## License
 
-FotoSort's own source is currently MIT-licensed; see [LICENSE](LICENSE).
-Dependencies and downloaded model weights retain their own licenses.
-In particular, the required Ultralytics package and YOLO weights use AGPL-3.0
-by default. [Ultralytics' licensing guidance](https://www.ultralytics.com/license)
-requires AGPL compliance for integrated projects or an enterprise license.
-The distribution licensing decision must be resolved before the initial release;
-the MIT license does not grant permissive rights to the complete dependency stack.
+Copyright (c) 2026 Jan R. Seyler. FotoSort is licensed under the GNU Affero
+General Public License, version 3 only (`AGPL-3.0-only`); see [LICENSE](LICENSE)
+and [NOTICE](NOTICE).
+
+Dependencies and downloaded model weights retain their own licenses. The
+required Ultralytics package and YOLO detector weights use AGPL-3.0 by default;
+see [Ultralytics' licensing guidance](https://www.ultralytics.com/license).

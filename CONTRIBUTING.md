@@ -72,5 +72,6 @@ current proposals.
 
 ## License
 
-By contributing you agree that your contribution is licensed under the MIT
-license, like the rest of the project.
+By contributing you agree that your contribution is licensed under the GNU
+Affero General Public License, version 3 only (`AGPL-3.0-only`), like the rest
+of the project. See [LICENSE](LICENSE).
