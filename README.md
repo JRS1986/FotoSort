@@ -14,8 +14,9 @@ fotosort /Volumes/SDCARD/DCIM/100OMSYS                # dry run: prints what it 
 fotosort /Volumes/SDCARD/DCIM/100OMSYS --copy --enhance   # enhanced copies of the picks in Highlights/
 ```
 
-Originals are never modified or deleted. Without `--move` or `--copy` the tool
-only writes a CSV report.
+Photo contents are never modified or deleted. A normal run writes a CSV report
+and a feature cache. `--move` relocates picks; `--raw-cull-move` relocates culled
+RAWs. `--xmp` writes sidecars, replacing existing ones only with `--xmp-overwrite`.
 
 ## How it works
 
@@ -357,7 +358,8 @@ fotosort /path --copy --enhance                  # enhanced copies of the picks 
 fotosort /path --move                            # move originals into /path/Highlights
 fotosort /path --recursive --with-sidecars       # include subfolders, bring RAW/XMP files along
 fotosort /path --max-per-group 3                 # tighter selection
-fotosort /path --labels labels/whale_watching.txt --label-mode image --judge \   # label file from the checkout
+# Use the label file from the checkout:
+fotosort /path --labels labels/whale_watching.txt --label-mode image --judge \
     --judge-hint "Whale-watching trip: keepers show the animal itself, not just a blow or splash"
 fotosort /path --copy --enhance --layout species # one subfolder per animal: Highlights/zebra/, Highlights/lion/, ...
 fotosort /path --dxo picks --copy --enhance      # PureRAW on the picks, then enhance from the DxO DNGs
@@ -370,7 +372,7 @@ fotosort enhance /any/folder                     # enhance any folder into <fold
 
 ```bash
 export OPENAI_API_KEY=sk-...                     # or --key-file path/to/.env (a KEY=value or key: value line)
-fotosort /path --judge                           # OpenAI gpt-5.6-sol, every frame at high detail
+fotosort /path --judge                           # OpenAI gpt-5.6-sol, shortlisted frames at high detail
 fotosort /path --judge --judge-model gpt-5.6-terra
 fotosort /path --judge --judge-provider anthropic # claude-opus-5 via ANTHROPIC_API_KEY
 fotosort /path --judge --judge-coverage full     # optional exhaustive pass; preselection is the default
@@ -598,4 +600,10 @@ and [CHANGELOG.md](CHANGELOG.md) for what has changed and what is planned.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+FotoSort's own source is currently MIT-licensed; see [LICENSE](LICENSE).
+Dependencies and downloaded model weights retain their own licenses.
+In particular, the required Ultralytics package and YOLO weights use AGPL-3.0
+by default. [Ultralytics' licensing guidance](https://www.ultralytics.com/license)
+requires AGPL compliance for integrated projects or an enterprise license.
+The distribution licensing decision must be resolved before the initial release;
+the MIT license does not grant permissive rights to the complete dependency stack.

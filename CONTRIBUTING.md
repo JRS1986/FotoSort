@@ -28,8 +28,9 @@ fotosort /tmp/testset --copy --enhance
 
 - **Keep the pipeline explainable.** Every decision FotoSort makes should be
   visible in the CSV report. If you add a signal, add its column.
-- **Never touch originals.** Anything that writes must write somewhere else,
-  and `--move` is the only operation that relocates a file.
+- **Preserve photo contents.** Photo writes must go to a new destination.
+  Only explicit `--move` or `--raw-cull-move` operations relocate originals;
+  replacing existing XMP sidecars requires `--xmp-overwrite`.
 - **Calibrate on real photos, then write the number down.** Thresholds such as
   the duplicate similarity or the blur floor were measured against real frames
   a photographer called identical or soft. If you change one, say in the commit
@@ -54,16 +55,20 @@ photos to the repository.
 - One topic per pull request, with a short description of what changed and
   why. Reference the report rows or measurements that motivated it.
 - `ruff check` and `pytest` must pass; CI runs both on Python 3.11 and 3.12.
+- CI also builds the source distribution and wheel, validates their metadata,
+  and checks the installed CLI outside the source tree. Run `python -m build`
+  and `python -m twine check --strict dist/*` locally before a release.
 - Add an entry under **Unreleased** in `CHANGELOG.md`.
 - New command-line flags need a row in the README options table with the
   actual default.
 
 ## Ideas that are welcome
 
-See the **Unreleased** section of `CHANGELOG.md` for the planned items: a
-local judge endpoint, RAW input, XMP sidecar export, and DINOv2 for duplicate
-detection. Each of those is a self-contained change and a good first
-contribution.
+Useful contributions include broader real-photo evaluations, RAW camera
+compatibility reports, and small fixes backed by reproducible examples.
+Local judging, RAW input, XMP export, and DINOv2 duplicate detection already
+exist; see `CHANGELOG.md` for implemented changes and the issue tracker for
+current proposals.
 
 ## License
 

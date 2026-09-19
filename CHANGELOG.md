@@ -6,6 +6,14 @@ All notable changes to FotoSort are documented here. The format follows
 
 ## [Unreleased]
 
+### Release preparation
+- Include label examples, evaluation documents, contribution notes and the
+  synthetic test generator in source distributions; remove tracked build output.
+- Build and validate distributions in CI and smoke-test the installed CLI.
+- Load the aesthetic predictor with PyTorch's restricted weights-only loader.
+- Correct the unreleased version history, CLI examples and file-operation docs.
+- Document the outstanding Ultralytics licensing decision before publication.
+
 ### Wildlife camera roll
 - Added `--mode award-roll --judge`: a single wildlife portfolio across all dates,
   targeting 12 photos (`--roll-size` accepts 10–15). One photo per species is the
@@ -180,12 +188,11 @@ All notable changes to FotoSort are documented here. The format follows
   correlation still catches pixel-identical frames. Cache format v5.
 - New dependencies: timm, rawpy, exifread.
 
-## [0.1.0] - 2026-09-04
+### Initial implementation — 2026-09-04 (unreleased)
 
-First public release, developed and calibrated on a 2,000-frame safari folder
-and a 2,700-frame whale-watching burst.
+Developed and calibrated on a 2,000-frame safari folder and a 2,700-frame
+whale-watching burst. No GitHub release or version tag has been published yet.
 
-### Added
 - Scoring of every JPEG: Laplacian sharpness (max over a tile grid), exposure
   clipping, CLIP ViT-L/14 embedding with the LAION aesthetic predictor,
   zero-shot subject labels, and a YOLOv8 person/animal detector for subject
@@ -217,5 +224,4 @@ and a 2,700-frame whale-watching burst.
 - Packaging (`pip install -e ".[judge]"`, `fotosort` console script), MIT
   license, GitHub Actions CI with ruff and pytest.
 
-[Unreleased]: https://github.com/JRS1986/FotoSort/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/JRS1986/FotoSort/releases/tag/v0.1.0
+[Unreleased]: https://github.com/JRS1986/FotoSort/commits/main
