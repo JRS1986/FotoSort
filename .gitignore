@@ -2,6 +2,11 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+brag-output/
 
 # Photos and tool output never belong in the repo
 .DS_Store
@@ -20,6 +25,7 @@ Enhanced/
 .fotosort_cache.npz
 fotosort_report.csv
 *.pt
+*.pth
 *.egg-info/
 build/
 dist/

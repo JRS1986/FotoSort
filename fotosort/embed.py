@@ -69,7 +69,7 @@ class Embedder:
         self.model = self.model.to(self.device).eval()
         self.tokenizer = open_clip.get_tokenizer("ViT-L-14-quickgelu")
         self.head = AestheticHead()
-        self.head.load_state_dict(torch.load(_aesthetic_weights(), map_location="cpu"))
+        self.head.load_state_dict(torch.load(_aesthetic_weights(), map_location="cpu", weights_only=True))
         self.head = self.head.to(self.device).eval()
 
     def prepare(self, img: Image.Image) -> torch.Tensor:
@@ -178,4 +178,3 @@ def classify(emb: np.ndarray, text_emb: np.ndarray, labels: list[str]) -> tuple[
     p /= p.sum(axis=1, keepdims=True)
     idx = p.argmax(axis=1)
     return [labels[i] for i in idx], p[np.arange(len(idx)), idx]
-

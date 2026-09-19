@@ -6,6 +6,20 @@ All notable changes to FotoSort are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-19
+
+Initial preview release. The entries below describe the work accumulated before
+the first published version.
+
+### Release preparation
+- Include label examples, evaluation documents, contribution notes and the
+  synthetic test generator in source distributions; remove tracked build output.
+- Build and validate distributions in CI and smoke-test the installed CLI.
+- Load the aesthetic predictor with PyTorch's restricted weights-only loader.
+- Correct the unreleased version history, CLI examples and file-operation docs.
+- Adopt AGPL-3.0-only for the initial release, retaining the Ultralytics detector.
+  Include the full license and copyright notice in source and wheel packages.
+
 ### Wildlife camera roll
 - Added `--mode award-roll --judge`: a single wildlife portfolio across all dates,
   targeting 12 photos (`--roll-size` accepts 10–15). One photo per species is the
@@ -180,12 +194,11 @@ All notable changes to FotoSort are documented here. The format follows
   correlation still catches pixel-identical frames. Cache format v5.
 - New dependencies: timm, rawpy, exifread.
 
-## [0.1.0] - 2026-09-04
+### Initial implementation — 2026-09-04
 
-First public release, developed and calibrated on a 2,000-frame safari folder
-and a 2,700-frame whale-watching burst.
+Developed and calibrated on a 2,000-frame safari folder and a 2,700-frame
+whale-watching burst. This development snapshot was not separately released.
 
-### Added
 - Scoring of every JPEG: Laplacian sharpness (max over a tile grid), exposure
   clipping, CLIP ViT-L/14 embedding with the LAION aesthetic predictor,
   zero-shot subject labels, and a YOLOv8 person/animal detector for subject
@@ -214,8 +227,9 @@ and a 2,700-frame whale-watching burst.
 - Robustness: unreadable files and files deleted mid-run are skipped, the
   judge fails fast without a key and aborts after repeated failures, the
   cache is invalidated on a version or detector change.
-- Packaging (`pip install -e ".[judge]"`, `fotosort` console script), MIT
-  license, GitHub Actions CI with ruff and pytest.
+- Packaging (`pip install -e ".[judge]"`, `fotosort` console script), the
+  development snapshot's MIT license (superseded by AGPL-3.0-only for this
+  release), GitHub Actions CI with ruff and pytest.
 
 [Unreleased]: https://github.com/JRS1986/FotoSort/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/JRS1986/FotoSort/releases/tag/v0.1.0

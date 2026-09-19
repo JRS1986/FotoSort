@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,13 +8,13 @@ version = "0.1.0"
 description = "Pick the best, most varied photos out of thousands of JPEGs: sharpness, CLIP aesthetics, subject detection, burst dedup, an optional vision-model judge, and style-aware enhancement."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "AGPL-3.0-only"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Jan R. Seyler" }]
 keywords = ["photography", "culling", "clip", "aesthetics", "wildlife", "safari", "burst"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Topic :: Multimedia :: Graphics",
@@ -33,7 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 judge = ["openai>=1.50", "anthropic>=1.3"]
-dev = ["pytest>=8.0", "ruff>=0.5", "openai>=1.50"]
+dev = ["pytest>=8.0", "ruff>=0.5", "openai>=1.50", "build>=1.2", "twine>=6.1"]
 
 [project.scripts]
 fotosort = "fotosort.__main__:main"
