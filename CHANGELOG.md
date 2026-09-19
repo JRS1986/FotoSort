@@ -6,6 +6,12 @@ All notable changes to FotoSort are documented here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+- Rework the README around installation, reviewing selections and explicit file
+  operations; highlight experimental status and documented missed favourites.
+- Move algorithm details and the complete option reference into linked guides;
+  clarify person detection, judge endpoints and model-dependent compatibility.
+
 ## [0.1.0] - 2026-09-19
 
 Initial preview release. The entries below describe the work accumulated before
