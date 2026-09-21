@@ -47,7 +47,8 @@ def test_exact_and_moment_recall_are_distinct_and_private(fixture, monkeypatch):
     path, _, _ = fixture
     result = evaluate(path, "baseline")
     shoot = result["shoots"][0]
-    assert shoot["metrics"]["shortlist_exact"] == dict(hits=1, total=1, unknown=0, recall=1.0)
+    assert shoot["metrics"]["shortlist_exact"] == dict(hits=1, total=1, unknown=0, recall=1.0,
+                                                       recall_lower_bound=1.0, recall_upper_bound=1.0)
     assert shoot["metrics"]["selection_exact"]["recall"] == 0
     assert shoot["metrics"]["selection_moments"]["recall"] == 1
     assert shoot["pairwise"]["other_only"] == 1
@@ -69,8 +70,11 @@ def test_unknown_exposure_and_missing_rows_do_not_become_negative_labels(fixture
     write_rows(path.parent / "baseline.csv", list(rows[0]), rows[:3])
     shoot["runs"]["baseline"].pop("report_sha256")
     result = evaluate(save(fixture), "baseline")["shoots"][0]
-    assert result["metrics"]["shortlist_exact"] == dict(hits=0, total=0, unknown=2, recall=None)
-    assert result["metrics"]["selection_exact"] == dict(hits=0, total=1, unknown=1, recall=0)
+    assert result["metrics"]["shortlist_exact"] == dict(hits=0, total=0, unknown=2, recall=None,
+                                                        recall_lower_bound=0, recall_upper_bound=1)
+    # One known miss and one unknown favourite: recall is somewhere in [0, 0.5], not a confident 0.
+    assert result["metrics"]["selection_exact"] == dict(hits=0, total=1, unknown=1, recall=None,
+                                                        recall_lower_bound=0, recall_upper_bound=0.5)
     assert result["coverage"]["unevaluated"] == 1
     assert result["coverage"]["shortlist_unknown"] == 2
     assert result["metrics"]["selection_moments"]["recall"] == 1  # a known acceptable hit is enough
@@ -196,7 +200,8 @@ def test_feedback_roundtrip_excludes_unreviewed_negatives(tmp_path):
     a, b, c = collection.entries
     collection.change(0, {a: "reject", b: "keep"}, preference=[b, a], alternatives=["moment", [b, c]])
     manifest = tmp_path / "evaluation.json"
-    document = export_feedback(tmp_path, "fotosort_report.csv", manifest, "heldout", 75, 1)
+    document, skipped = export_feedback(tmp_path, "fotosort_report.csv", manifest, "heldout", 75, 1)
+    assert skipped == 0
     shoot = document["shoots"][0]
     assert shoot["favourites"] == [b] and shoot["rejected"] == [a]
     assert c not in shoot["rejected"]
@@ -232,6 +237,9 @@ def test_malformed_manifests_fail_cleanly(tmp_path, bad):
 
 def test_comparison_rejects_changed_report_content_without_manifest_hashes(fixture):
     path, doc, rows = fixture
+    rows[0]["photo_sha256"] = "b" * 64
+    write_rows(path.parent / "baseline.csv", list(rows[0]), rows)
+    doc["shoots"][0]["runs"]["baseline"]["report_sha256"] = fingerprint(path.parent / "baseline.csv")
     rows[0]["photo_sha256"] = "c" * 64
     write_rows(path.parent / "candidate.csv", list(rows[0]), rows)
     doc["shoots"][0]["runs"]["candidate"].pop("report_sha256")
@@ -271,3 +279,139 @@ def test_feedback_preserves_old_identity_for_changed_unreviewed_source(tmp_path)
     export_feedback(tmp_path, "fotosort_report.csv", manifest, "diagnostic")
     result = evaluate(manifest, "baseline")["shoots"][0]
     assert result["coverage"]["changed_files"] == 1
+
+
+def test_known_candidates_above_the_limit_block_comparison_despite_unknown_exposure(fixture):
+    path, doc, rows = fixture
+    for run in doc["shoots"][0]["runs"].values():
+        run["budget"]["candidate_limit"] = 2
+    rows[3]["shortlisted"] = ""  # a, b and c are known candidates; d is unknown
+    write_rows(path.parent / "candidate.csv", list(rows[0]), rows)
+    doc["shoots"][0]["runs"]["candidate"].pop("report_sha256")
+    result = evaluate(save(fixture), "candidate")["shoots"][0]
+    assert result["candidate_count"] == 3 and result["budget_compliance"]["candidates"] is False
+    with pytest.raises(ReviewError, match="exceeds its declared"):
+        evaluate(path, "candidate", "baseline")
+    doc["shoots"][0]["runs"]["candidate"]["budget"]["candidate_limit"] = 3
+    assert evaluate(save(fixture), "candidate")["shoots"][0]["budget_compliance"]["candidates"] is None
+
+
+def test_forced_includes_are_not_scored_as_automatic_picks(fixture):
+    path, doc, rows = fixture
+    rows[0].update(selected="1", auto_selected="1", judge_reason="forced by --include",
+                   auto_decision="Forced by --include")  # as written before --include kept provenance
+    write_rows(path.parent / "baseline.csv", list(rows[0]), rows)
+    doc["shoots"][0]["runs"]["baseline"].pop("report_sha256")
+    result = evaluate(save(fixture), "baseline")["shoots"][0]
+    assert result["coverage"]["human_forced"] == 1
+    exact = result["metrics"]["selection_exact"]
+    assert exact["recall"] is None and exact["unknown"] == 1
+    rows[0].update(auto_selected="0", auto_decision="Group budget filled")  # provenance recorded: automation said no
+    write_rows(path.parent / "baseline.csv", list(rows[0]), rows)
+    result = evaluate(path, "baseline")["shoots"][0]
+    assert result["coverage"]["human_forced"] == 0 and result["metrics"]["selection_exact"]["recall"] == 0
+
+
+def test_report_without_recorded_exposure_has_unknown_shortlist_recall(fixture):
+    path, doc, rows = fixture
+    for row in rows:
+        row["shortlisted"] = "0"  # what analysis without --judge writes on every row
+    rows[0]["selected"] = rows[0]["auto_selected"] = "1"
+    write_rows(path.parent / "baseline.csv", list(rows[0]), rows)
+    doc["shoots"][0]["runs"]["baseline"].pop("report_sha256")
+    result = evaluate(save(fixture), "baseline")["shoots"][0]
+    assert result["metrics"]["shortlist_exact"]["recall"] is None
+    assert result["metrics"]["selection_exact"]["recall"] == 1
+    assert result["coverage"]["shortlist_unknown"] == 4 and result["candidate_count"] == 0
+
+
+def test_partially_known_moments_report_bounds_instead_of_a_flattering_recall(fixture):
+    path, doc, rows = fixture
+    shoot = doc["shoots"][0]
+    shoot["photos"] += [dict(id=name, file=f"{name}.jpg") for name in "efgh"]
+    shoot["acceptable"] = [["a", "e"], ["b", "f"], ["c", "g"], ["d", "h"]]
+    for row, picked in zip(rows, "1100", strict=True):
+        row["selected"] = row["auto_selected"] = picked
+    write_rows(path.parent / "baseline.csv", list(rows[0]), rows)  # e-h have no rows: unknown partners
+    shoot["runs"]["baseline"].pop("report_sha256")
+    result = evaluate(save(fixture), "baseline")
+    expected = dict(hits=2, total=2, unknown=2, recall=None, recall_lower_bound=0.5, recall_upper_bound=1.0)
+    assert result["shoots"][0]["metrics"]["selection_moments"] == expected
+    assert result["splits"]["diagnostic"]["metrics"]["selection_moments"] == expected
+
+
+def test_summary_output_cannot_replace_inputs_under_another_spelling(fixture, tmp_path):
+    path, doc, _ = fixture
+    root = tmp_path / "photos"
+    root.mkdir()
+    for name in "abcd":
+        (root / f"{name}.jpg").write_bytes(name.encode())
+    (root / ".fotosort_review.json").write_text("{}")
+    doc["shoots"][0]["root"] = "photos"
+    save(fixture)
+    alias = tmp_path / "alias.json"
+    alias.symlink_to(path)
+    before = path.read_bytes()
+    for output in (alias, root / ".fotosort_review.json"):
+        with pytest.raises(SystemExit) as exc:
+            main(["evaluate", "run", str(path), "--output", str(output)])
+        assert exc.value.code == 2
+    assert path.read_bytes() == before and (root / ".fotosort_review.json").read_text() == "{}"
+
+
+def test_legacy_reports_without_hashes_compare_as_unverified_not_different(fixture):
+    path, doc, rows = fixture
+    for row in rows:
+        row["selected"] = row["auto_selected"] = str(int(row["file"] == "a.jpg"))
+        row["photo_sha256"] = "a" * 64
+    write_rows(path.parent / "candidate.csv", list(rows[0]), rows)
+    doc["shoots"][0]["runs"]["candidate"].pop("report_sha256")
+    result = evaluate(save(fixture), "candidate", "baseline")
+    assert result["comparison"][0]["content_identities_verified"] is False
+
+
+def test_feedback_from_a_legacy_absolute_report_can_be_evaluated(tmp_path):
+    (tmp_path / "day").mkdir()
+    for name in "ab":
+        (tmp_path / "day" / f"{name}.jpg").write_bytes(name.encode())
+    rows = [dict(file=str(tmp_path / "day" / f"{name}.jpg"), selected=str(int(name == "a")), shortlisted="1")
+            for name in "ab"]
+    write_rows(tmp_path / "fotosort_report.csv", list(rows[0]), rows)
+    collection = Collection(tmp_path)
+    collection.change(0, {list(collection.entries)[0]: "keep"})
+    manifest = tmp_path / "evaluation.json"
+    export_feedback(tmp_path, "fotosort_report.csv", manifest, "diagnostic")
+    assert evaluate(manifest, "baseline")["shoots"][0]["metrics"]["selection_exact"]["recall"] == 1
+
+
+def test_imported_decisions_are_not_feedback_unless_requested(tmp_path):
+    for name in "abc":
+        (tmp_path / f"{name}.jpg").write_bytes(name.encode())
+    rows = [dict(file=f"{name}.jpg", relative_file=f"{name}.jpg", selected=str(int(name == "a")), shortlisted="1")
+            for name in "abc"]
+    write_rows(tmp_path / "fotosort_report.csv", list(rows[0]), rows)
+    assert main(["decisions", str(tmp_path), "import"]) == 0
+    collection = Collection(tmp_path)
+    a, b, _ = collection.entries
+    collection.change(1, {b: "keep"}, "The expression")
+    document, skipped = export_feedback(tmp_path, "fotosort_report.csv", tmp_path / "one.json", "diagnostic")
+    assert skipped == 2 and document["shoots"][0]["favourites"] == [b] and document["shoots"][0]["rejected"] == []
+    document, skipped = export_feedback(tmp_path, "fotosort_report.csv", tmp_path / "all.json", "diagnostic",
+                                        include_imported=True)
+    assert skipped == 0 and set(document["shoots"][0]["favourites"]) == {a, b}
+
+
+def test_reversed_preferences_count_once_with_the_latest_verdict(fixture):
+    _, doc, _ = fixture
+    doc["shoots"][0]["preferences"] = [dict(winner="a", loser="b"), dict(winner="b", loser="a")]
+    pairwise = evaluate(save(fixture), "baseline")["shoots"][0]["pairwise"]
+    assert pairwise == dict(preferred_only=1, other_only=0, both=0, neither=0, unknown=0)
+
+
+def test_undecodable_report_is_an_evaluation_error(fixture):
+    path, doc, _ = fixture
+    (path.parent / "baseline.csv").write_bytes("file,selected\nL\xf6we.jpg,1\n".encode("latin-1"))
+    doc["shoots"][0]["runs"]["baseline"].pop("report_sha256")
+    with pytest.raises(SystemExit) as exc:
+        main(["evaluate", "run", str(save(fixture))])
+    assert exc.value.code == 2
