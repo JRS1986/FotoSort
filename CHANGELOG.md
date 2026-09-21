@@ -6,6 +6,13 @@ All notable changes to FotoSort are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Persist explicit keep/reject choices, pairwise preferences, and acceptable
+  alternatives with `fotosort decisions`; retain automatic report provenance,
+  protect concurrent edits, and export reviewed CSVs without model calls.
+- Verify content identities before applying new-format reports; changed files
+  cannot silently inherit reviewed selections.
+
 ### Documentation
 - Add an issue-first contribution workflow, bug/feature and pull-request
   templates, and repository instructions for agent-assisted development

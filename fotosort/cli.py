@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import math
 import os
 import shutil
@@ -36,6 +37,7 @@ from fotosort.quality import (
     subject_focus,
     to_gray,
 )
+from fotosort.review_data import REVIEW_FIELDS, apply_manual_decisions, atomic_write, fingerprint, photo_id
 from fotosort.scan import find_images, is_raw, raw_sibling, read_exif, sidecars
 from fotosort.selection import (
     ScenedCandidate,
@@ -108,6 +110,12 @@ class Photo:
     reject: str = ""
     selected: bool = False
     decision: str = ""
+    auto_selected: bool | None = None
+    auto_decision: str = ""
+    manual_decision: str = ""
+    manual_reason: str = ""
+    review_status: str = ""
+    review_revision: int = 0
 
     @property
     def day(self) -> str:
@@ -1147,13 +1155,18 @@ def write_report(photos: list[Photo], path: Path, root: Path | None = None) -> N
             "editorial_score", "editorial_bonus", "moment", "moment_novelty", "subject_embedding",
             "focus_rank", "detail_focus", "refined_focus_adjustment", "focus_refinement", "preselection_reason",
             "burst", "subject_box_count", "interaction_embedding", *[f"burst_{name}" for name in BURST_PROMPTS],
-            "judge_label", "award_rank", "award_moment", "award_special_moment", "award_exceptional_reason"]
+            "judge_label", "award_rank", "award_moment", "award_special_moment", "award_exceptional_reason",
+            *REVIEW_FIELDS]
     def metric(value):
         return f"{value:.4f}" if value is not None else ""
-    with open(path, "w", newline="") as f:
+    with io.StringIO(newline="") as f:
         wr = csv.writer(f)
         wr.writerow(cols)
         for ph in sorted(photos, key=lambda p: (p.day, p.label, -p.score)):
+            relative = os.path.relpath(ph.path, root)
+            digest = ph.digest if not ph.source or ph.source == ph.path else ""
+            if not digest and ph.path.is_file():
+                digest = fingerprint(ph.path)
             wr.writerow([
                 str(ph.path), ph.time.isoformat() if ph.time else "", ph.day, ph.label,
                 f"{ph.label_prob:.2f}", f"{ph.person:.3f}", f"{ph.subject:.3f}", int(ph.edge), ph.scene,
@@ -1177,7 +1190,12 @@ def write_report(photos: list[Photo], path: Path, root: Path | None = None) -> N
                 ph.award_assessment.moment if ph.award_assessment else "",
                 int(ph.award_assessment.special_moment) if ph.award_assessment else "",
                 ph.award_assessment.exceptional_reason if ph.award_assessment else "",
+                photo_id(relative, digest) if digest else "", digest,
+                int(ph.selected if ph.auto_selected is None else ph.auto_selected),
+                ph.auto_decision if ph.auto_selected is not None else ph.decision,
+                ph.manual_decision, ph.manual_reason, ph.review_status, ph.review_revision,
             ])
+        atomic_write(path, f.getvalue())
 
 
 def write_sidecars(photos: list[Photo], args) -> None:
@@ -1281,6 +1299,7 @@ def main(argv=None) -> int:
     for ph in forced:
         ph.selected, ph.judge_reason = True, "forced by --include"
         ph.decision = "Forced by --include"
+    apply_manual_decisions(photos, root)
     if judge is not None and args.judge_species and args.mode != "award-roll":
         name_pick_subjects([ph for ph in photos if ph.selected], judge, labels)
     if judge is not None:
@@ -1460,6 +1479,9 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
             r = by_name[ph.path.name][0]
         matches.append((ph, r))
     # Resolve every row before allowing copy, move, enhancement or RAW culling.
+    for ph, row in matches:
+        if row and row.get("photo_sha256") and fingerprint(ph.path) != row["photo_sha256"]:
+            raise SystemExit(f"Photo changed since this report: {ph.path.name}; rerun analysis before applying it.")
     picks, matched = [], set()
     for ph, r in matches:
         if r is not None:

@@ -24,6 +24,9 @@ Highlights/
 Enhanced/
 .fotosort_cache.npz
 fotosort_report.csv
+.fotosort_review.json
+.fotosort_review.lock
+fotosort_reviewed.csv
 *.pt
 *.pth
 *.egg-info/

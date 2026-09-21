@@ -66,6 +66,23 @@ match v0.1.0. Provider model access depends on your account or server.
 | `--limit N` | | only process the first N files |
 | `--batch-size` / `--workers` | 32 / 4 | GPU batch size and decoder threads |
 
+## Persistent decisions
+
+`fotosort decisions FOLDER [--report fotosort_report.csv] COMMAND` edits local
+human choices without models. See [review decisions](review.md) for the format
+and identity rules.
+
+| Command / option | Default | Meaning |
+|---|---|---|
+| `set FILE... --choice keep\|reject\|clear` | choice required | Set or clear explicit overrides using relative paths |
+| `set` / `prefer --note TEXT` | empty | Record a human explanation |
+| `prefer WINNER LOSER` | | Record a pairwise preference without changing selection |
+| `alternatives NAME FILE...` | | Record acceptable alternatives for a moment |
+| `undo` | last edit | Restore previous decisions and feedback, up to 50 edits |
+| `show` | | Print the current review record without undo history |
+| `import` | all report rows | Explicitly convert this report's selected column into keep/reject choices |
+| `export --output FILE` | fotosort_reviewed.csv | Export effective selections to a CSV inside the photo folder |
+
 ## Standalone enhancement
 
 Run `fotosort enhance --help` for its separate options:
