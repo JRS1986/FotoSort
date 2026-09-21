@@ -3,7 +3,7 @@
 [Back to the README](../README.md) · [How selection works](how-it-works.md)
 
 Run `fotosort --help` for the installed version's options. The defaults below
-match v0.1.0. Provider model access depends on your account or server.
+match v0.2.0. Provider model access depends on your account or server.
 
 | Flag | Default | Meaning |
 |---|---|---|

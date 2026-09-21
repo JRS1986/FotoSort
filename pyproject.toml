@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fotosort"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pick the best, most varied photos out of thousands of JPEGs: sharpness, CLIP aesthetics, subject detection, burst dedup, an optional vision-model judge, and style-aware enhancement."
 readme = "README.md"
 requires-python = ">=3.11"

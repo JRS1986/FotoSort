@@ -6,6 +6,12 @@ All notable changes to FotoSort are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-21
+
+Experimental preview adding persistent review decisions, a local visual reviewer,
+and offline evaluation of saved reports. Photo-selection thresholds and model
+weights are unchanged. See the [release notes](docs/releases/0.2.0.md).
+
 ### Added
 - Add an offline evaluation harness with versioned photographer-feedback manifests,
   exact and acceptable-moment recall, explicit review effort, coverage diagnostics,
@@ -275,5 +281,6 @@ whale-watching burst. This development snapshot was not separately released.
   development snapshot's MIT license (superseded by AGPL-3.0-only for this
   release), GitHub Actions CI with ruff and pytest.
 
-[Unreleased]: https://github.com/JRS1986/FotoSort/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/JRS1986/FotoSort/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/JRS1986/FotoSort/releases/tag/v0.2.0
 [0.1.0]: https://github.com/JRS1986/FotoSort/releases/tag/v0.1.0
