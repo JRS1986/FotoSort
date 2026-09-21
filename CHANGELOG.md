@@ -7,6 +7,9 @@ All notable changes to FotoSort are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Add an offline evaluation harness with versioned photographer-feedback manifests,
+  exact and acceptable-moment recall, explicit review effort, coverage diagnostics,
+  frozen baseline comparisons, and shareable summaries separated by shoot/split.
 - Add a local visual reviewer for existing reports: compare excluded neighbours,
   synchronize native zoom/pan, record manual choices and feedback, undo edits,
   and export reviewed CSVs. Images and review requests remain local.

@@ -189,6 +189,18 @@ The normal report is `award_roll_report.csv`, and exports go to `AwardRoll/`.
 zero. Judge failure stops this mode; it does not fill the portfolio with local
 score fallbacks. See the [selection details](docs/how-it-works.md#wildlife-portfolio---mode-award-roll---judge).
 
+## Evaluate reviewed selections
+
+Create a private feedback manifest and evaluate saved results without model calls:
+
+```bash
+fotosort evaluate feedback /path/to/photos --output fotosort_evaluation.json --split diagnostic
+fotosort evaluate run fotosort_evaluation.json --output summary.json
+```
+
+The [evaluation guide](docs/evaluation.md) defines exact-favourite and acceptable-moment
+recall, missing-data handling, measured review effort, and frozen baseline comparisons.
+
 ## Known limitations
 
 - **Preferred moments can be missed.** In a diagnostic replay, all three

@@ -1,6 +1,6 @@
 include AGENTS.md CHANGELOG.md CONTRIBUTING.md fotosort.sh
 recursive-include labels *.txt
-recursive-include docs *.md *.json *.csv
+recursive-include docs *.md *.json *.csv *.py
 recursive-include tests *.py
 prune build
 prune dist

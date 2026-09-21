@@ -4,6 +4,10 @@ import sys
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "evaluate":
+        from fotosort.evaluate import main as evaluate_main
+
+        return evaluate_main(argv[1:])
     if argv and argv[0] == "review":
         from fotosort.review import main as review_main
 
