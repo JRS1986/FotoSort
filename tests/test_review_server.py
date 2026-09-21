@@ -244,3 +244,37 @@ def test_images_are_hashed_once_and_full_jpegs_are_served_as_files(tmp_path, mon
         assert app.snapshot()["photos"][0]["status"] == "changed"
     finally:
         app.server_close()
+
+
+def test_lazy_image_conflict_is_visible_on_reload_and_export(server):
+    collection = server.collection
+    collection.export("hashed.csv", 0)
+    server.collection = Collection(collection.root, "hashed.csv", verify_sources=False)
+    identifier, entry = next(iter(server.collection.entries.items()))
+    assert entry["stamp"] is None
+    entry["path"].write_bytes(b"changed before the first image request")
+    with pytest.raises(HTTPError) as exc:
+        request(server, f"/image/{identifier}?size=thumb")
+    assert exc.value.code == 409
+    state, _ = request(server, "/api/state")
+    photo = state["photos"][0]
+    assert photo["status"] == photo["review_status"] == "changed"
+    # The UI attention filter now sees it; exporting retains the changed status and recorded hash.
+    output, _ = request(server, "/api/export", dict(revision=0, report_version=state["report_version"]))
+    from fotosort.review_data import read_report
+
+    _, rows = read_report(collection.root / output["output"])
+    assert rows[0]["review_status"] == "changed"
+    assert rows[0]["photo_sha256"] == entry["row"]["photo_sha256"]
+
+
+def test_reload_recovers_a_missing_photo_with_unchanged_mtime(server):
+    identifier, entry = next(iter(server.collection.entries.items()))
+    backup = entry["path"].with_suffix(".backup")
+    entry["path"].rename(backup)
+    state, _ = request(server, "/api/state")
+    assert state["photos"][0]["status"] == "missing"
+    backup.rename(entry["path"])
+    state, _ = request(server, "/api/state")
+    assert state["photos"][0]["status"] == "available"
+    assert request(server, f"/image/{identifier}?size=thumb")[0]

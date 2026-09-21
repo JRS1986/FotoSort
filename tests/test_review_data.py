@@ -351,3 +351,29 @@ def test_invalid_review_record_stops_the_run_before_analysis(tmp_path, monkeypat
     monkeypatch.setattr(cli, "compute_features", lambda *args: pytest.fail("analysis started"))
     assert cli.main([str(tmp_path)]) == 2
     assert "Invalid or unsupported review file" in capsys.readouterr().err
+
+
+def test_lazy_verification_records_changed_and_missing_status(tmp_path):
+    collection(tmp_path)
+    lazy = Collection(tmp_path, verify_sources=False)
+    a, b = lazy.entries
+    (tmp_path / "a.jpg").write_bytes(b"changed contents")
+    (tmp_path / "b.jpg").unlink()
+    for identifier in (a, b):
+        with pytest.raises(Conflict):
+            lazy.verify(identifier)
+    assert [r["status"] for r in lazy.view()] == ["changed", "missing"]
+    assert lazy.entries[a]["stamp"] is not None
+    assert lazy.entries[b]["stamp"] is None
+
+
+def test_verified_photo_restored_after_missing_is_verified_again(tmp_path):
+    c, _ = collection(tmp_path)
+    identifier = next(iter(c.entries))
+    path = tmp_path / "a.jpg"
+    backup = tmp_path / "a.backup"
+    path.rename(backup)
+    with pytest.raises(Conflict):
+        c.verify(identifier)
+    backup.rename(path)  # identical size/mtime to the previously verified photo
+    assert c.verify(identifier)["status"] == "available"

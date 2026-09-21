@@ -778,8 +778,9 @@ def apply_person_override(photos: list[Photo], min_area: float, min_agree: float
 
 
 def forced_includes(photos: list[Photo], spec: str) -> list[Photo]:
-    """Resolve --include (stems, file names, or @file) to photos; they are never
-    rejected and always end up selected."""
+    """Resolve --include without changing eligibility for automatic selection.
+
+    The caller applies these human choices after recording the automatic result."""
     if not spec:
         return []
     if spec.startswith("@"):
@@ -788,8 +789,6 @@ def forced_includes(photos: list[Photo], spec: str) -> list[Photo]:
         names = [n.strip() for n in spec.split(",") if n.strip()]
     wanted = {Path(n).stem.lower() for n in names}
     found = [ph for ph in photos if ph.path.stem.lower() in wanted]
-    for ph in found:
-        ph.reject = ""
     missing = wanted - {ph.path.stem.lower() for ph in found}
     if missing:
         print(f"--include: not found in this folder: {', '.join(sorted(missing))}")
@@ -1282,7 +1281,7 @@ def main(argv=None) -> int:
 
     # Read manual decisions before any expensive analysis or judge call can be wasted on a bad store.
     try:
-        review_state = ReviewStore(root).load()
+        ReviewStore(root).load()
     except (OSError, ReviewError) as exc:
         print(f"Review error: {exc}", file=sys.stderr)
         return 2
@@ -1319,8 +1318,15 @@ def main(argv=None) -> int:
     for ph in forced:
         # --include is a human choice: keep the automatic result separate, as for manual decisions.
         ph.auto_selected, ph.auto_decision = ph.selected, ph.decision or ph.reject
+        ph.reject = ""
         ph.selected, ph.judge_reason = True, "forced by --include"
         ph.decision = "Forced by --include"
+    # A review may have been saved while features or judge results were being computed.
+    try:
+        review_state = ReviewStore(root).load()
+    except (OSError, ReviewError) as exc:
+        print(f"Review error: {exc}", file=sys.stderr)
+        return 2
     for warning in apply_manual_decisions(photos, root, review_state):
         print(f"Review: {warning}", file=sys.stderr)
     if judge is not None and args.judge_species and args.mode != "award-roll":
@@ -1330,7 +1336,13 @@ def main(argv=None) -> int:
 
     editing_advice(photos, emb, args)
     report = root / args.report
-    write_report(photos + unreadable, report, root)
+    store = ReviewStore(root)
+    with store.locked():
+        if store.load()["revision"] != review_state["revision"]:
+            print("Review changed while finishing analysis; rerun to apply the latest decisions. "
+                  "The report and photo exports were not updated.", file=sys.stderr)
+            return 2
+        write_report(photos + unreadable, report, root)
     if args.xmp:
         write_sidecars(photos, args)
     if args.raw_cull:
@@ -1502,9 +1514,11 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
             r = by_name[ph.path.name][0]
         matches.append((ph, r))
     # Resolve every row before allowing copy, move, enhancement or RAW culling.
-    # Only picks are copied, moved or enhanced, so only their contents need to match the report.
+    # RAW culling also acts on unselected photos: their old rejection cannot apply to new contents.
     for ph, row in matches:
-        if not row or row.get("selected") != "1" or not row.get("photo_sha256"):
+        if not row or not row.get("photo_sha256"):
+            continue
+        if row.get("selected") != "1" and not args.raw_cull:
             continue
         try:
             changed = fingerprint(ph.path) != row["photo_sha256"]
