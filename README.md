@@ -12,11 +12,11 @@ Built around wildlife and travel shoots: long bursts, similar frames, and severa
 subjects in a day. Local models assess sharpness, exposure, aesthetics, subjects,
 and similarity. An optional vision-model judge can compare shortlisted photos.
 
-**v0.1.0 is an experimental preview.** It can miss your favourite frame or prefer
+**v0.2.0 is an experimental preview.** It can miss your favourite frame or prefer
 a weaker expression. Review the results before discarding anything; the
 [known limitations](#known-limitations) include real examples of missed favourites.
 
-[Download v0.1.0](https://github.com/JRS1986/FotoSort/releases/tag/v0.1.0) ·
+[Download v0.2.0](https://github.com/JRS1986/FotoSort/releases/tag/v0.2.0) ·
 [How selection works](docs/how-it-works.md) ·
 [All CLI options](docs/cli-reference.md)
 
