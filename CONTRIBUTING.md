@@ -52,15 +52,31 @@ photos to the repository.
 
 ## Pull requests
 
+- Start from an existing issue, or open one using the bug/feature templates.
+  Define the problem, scope, acceptance criteria, dependencies and validation
+  before implementation. Search existing issues and PRs to avoid duplicates.
+- Use a focused `codex/<topic>` branch from the current default branch. Keep
+  unrelated changes separate and preserve any existing local work.
 - One topic per pull request, with a short description of what changed and
   why. Reference the report rows or measurements that motivated it.
+- Link the issue in the PR description. Use `Closes #N` when all of its
+  acceptance criteria are met, or `Refs #N` for a partial implementation.
+  Open incomplete work as a draft and list what remains.
 - `ruff check` and `pytest` must pass; CI runs both on Python 3.11 and 3.12.
 - CI also builds the source distribution and wheel, validates their metadata,
   and checks the installed CLI outside the source tree. Run `python -m build`
   and `python -m twine check --strict dist/*` locally before a release.
 - Add an entry under **Unreleased** in `CHANGELOG.md`.
-- New command-line flags need a row in the README options table with the
-  actual default.
+- New command-line flags need a row in [the CLI reference](docs/cli-reference.md)
+  with the actual default. Update README workflow examples where useful.
+- Review the final diff and include actual validation results and material
+  limitations in the PR. Documentation/template changes need content and link
+  checks; do not add tests that only repeat the documentation.
+- Keep PRs open for maintainer review and merge only after authorization and
+  passing checks. Do not push changes directly to `main`. Close issues only
+  when their acceptance criteria are satisfied and the relevant PRs have merged.
+
+Agent-assisted work follows the same process; see [AGENTS.md](AGENTS.md).
 
 ## Ideas that are welcome
 
@@ -69,6 +85,12 @@ compatibility reports, and small fixes backed by reproducible examples.
 Local judging, RAW input, XMP export, and DINOv2 duplicate detection already
 exist; see `CHANGELOG.md` for implemented changes and the issue tracker for
 current proposals.
+
+The [project roadmap](https://github.com/JRS1986/FotoSort/issues/6) tracks the
+planned improvements and their dependencies. Personal-preference learning and
+resumability are the current priorities, supported by persistent manual
+decisions, a local reviewer, and photographic evaluation. Each improvement has
+its own scoped issue; future proposals should follow the same process.
 
 ## License
 

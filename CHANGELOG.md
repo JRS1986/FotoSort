@@ -7,6 +7,10 @@ All notable changes to FotoSort are documented here. The format follows
 ## [Unreleased]
 
 ### Documentation
+- Add an issue-first contribution workflow, bug/feature and pull-request
+  templates, and repository instructions for agent-assisted development.
+- Link the prioritized project roadmap and correct the CLI documentation
+  location in the contribution guide.
 - Rework the README around installation, reviewing selections and explicit file
   operations; highlight experimental status and documented missed favourites.
 - Move algorithm details and the complete option reference into linked guides;
