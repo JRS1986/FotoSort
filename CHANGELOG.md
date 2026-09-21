@@ -16,6 +16,12 @@ All notable changes to FotoSort are documented here. The format follows
   and one-by-one review choices. Warn when a decision's photo has moved or
   left the collection, and validate the review record before analysis starts.
 
+### Fixed
+- Verify unselected report photos before RAW culling, refresh manual choices
+  after analysis, and stop report/export writes if a later review edit conflicts.
+- Apply forced includes after automatic selection and expose changed or missing
+  source status when lazy verification fails.
+
 ### Documentation
 - Add an issue-first contribution workflow, bug/feature and pull-request
   templates, and repository instructions for agent-assisted development

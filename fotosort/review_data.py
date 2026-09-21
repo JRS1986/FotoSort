@@ -346,15 +346,18 @@ class Collection:
             raise ReviewError("Unknown photo")
         path = inside(self.root, entry["relative_file"])
         try:
-            current = stamp(path) if entry["status"] == "available" and path.is_file() else None
-            if current is not None and current != entry["stamp"]:
-                if fingerprint(path) != entry["sha256"]:
-                    current = None
-                else:
-                    entry["stamp"] = current
+            current = stamp(path)
+            if current != entry["stamp"]:
+                digest = fingerprint(path)
+                expected = entry["row"].get("photo_sha256") or entry["sha256"]
+                entry["status"] = "available" if digest == expected == entry["sha256"] else "changed"
+                entry["stamp"] = current
         except OSError:
-            current = None
-        if current is None:
+            entry["status"], entry["stamp"] = "missing", None
+        except Conflict:
+            entry["status"], entry["stamp"] = "changed", None
+            raise
+        if entry["status"] != "available":
             raise Conflict(f"Photo is missing or changed: {entry['relative_file']}; rerun analysis before reviewing it")
         return entry
 
