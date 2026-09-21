@@ -30,7 +30,8 @@ def relative_name(value: str) -> str:
     if not isinstance(value, str) or not value or "\\" in value or "\x00" in value:
         raise ReviewError("Expected a path relative to the collection")
     path = PurePosixPath(value)
-    if path.is_absolute() or ".." in path.parts or not path.parts or ":" in path.parts[0]:
+    if (path.is_absolute() or ".." in path.parts or not path.parts
+            or re.fullmatch(r"[A-Za-z]:", path.parts[0])):
         raise ReviewError("Path must stay inside the collection")
     return path.as_posix()
 
@@ -52,6 +53,12 @@ def fingerprint(path: Path) -> str:
     return digest
 
 
+def stamp(path: Path) -> tuple[int, int]:
+    """Size and modification time: a cheap signal that verified contents are unchanged."""
+    stat = path.stat()
+    return stat.st_size, stat.st_mtime_ns
+
+
 def photo_id(relative: str, digest: str) -> str:
     return hashlib.sha256(f"{relative_name(relative)}\0{digest}".encode()).hexdigest()
 
@@ -65,6 +72,14 @@ def atomic_write(path: Path, text: str) -> None:
             stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
+        # NamedTemporaryFile creates 0600 files; reports keep their mode or follow the umask.
+        try:
+            mode = path.stat().st_mode & 0o777
+        except OSError:
+            umask = os.umask(0)
+            os.umask(umask)
+            mode = 0o666 & ~umask
+        os.chmod(name, mode)
         os.replace(name, path)
     finally:
         if name is not None:
@@ -96,6 +111,45 @@ def validate_feedback(state: dict) -> None:
             raise ValueError("invalid alternatives")
 
 
+FEEDBACK_KEYS = ("decisions", "preferences", "alternatives")
+
+
+def inverse_delta(before: dict, after: dict) -> dict:
+    """The previous value of every changed entry, so undo never stores whole copies of the state."""
+    delta = {}
+    for key in ("decisions", "alternatives"):
+        changed = {name: copy.deepcopy(before[key].get(name)) for name in before[key].keys() | after[key].keys()
+                   if before[key].get(name) != after[key].get(name)}
+        if changed:
+            delta[key] = changed
+    if before["preferences"] != after["preferences"]:
+        delta["preferences"] = copy.deepcopy(before["preferences"])
+    return delta
+
+
+def apply_delta(state: dict, delta: dict) -> None:
+    for key in ("decisions", "alternatives"):
+        for name, previous in delta.get(key, {}).items():
+            if previous is None:
+                state[key].pop(name, None)
+            else:
+                state[key][name] = previous
+    if "preferences" in delta:
+        state["preferences"] = delta["preferences"]
+
+
+def validate_history(entry: dict) -> None:
+    if set(entry) == set(FEEDBACK_KEYS):  # a whole-state snapshot written by an earlier preview
+        return validate_feedback(entry)
+    if set(entry) != {"delta"} or not isinstance(entry["delta"], dict) or set(entry["delta"]) - set(FEEDBACK_KEYS):
+        raise ValueError("invalid history")
+    delta = entry["delta"]
+    present = dict(decisions={k: v for k, v in delta.get("decisions", {}).items() if v is not None},
+                   preferences=delta.get("preferences", []),
+                   alternatives={k: v for k, v in delta.get("alternatives", {}).items() if v is not None})
+    validate_feedback(present)
+
+
 class ReviewStore:
     def __init__(self, root: Path):
         self.root = root.resolve()
@@ -115,11 +169,9 @@ class ReviewStore:
             if len(state["history"]) > 50:
                 raise ValueError("invalid history")
             for previous in state["history"]:
-                if set(previous) != {"decisions", "preferences", "alternatives"}:
-                    raise ValueError("invalid history")
-                validate_feedback(previous)
+                validate_history(previous)
             return state
-        except (KeyError, TypeError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ReviewError("Invalid or unsupported review file; restore a valid copy before continuing") from exc
 
     @contextmanager
@@ -142,11 +194,15 @@ class ReviewStore:
             if undo:
                 if not state["history"]:
                     raise ReviewError("Nothing to undo")
-                state.update(state["history"].pop())
+                previous = state["history"].pop()
+                if "delta" in previous:
+                    apply_delta(state, previous["delta"])
+                else:
+                    state.update(previous)
             else:
-                previous = copy.deepcopy({k: state[k] for k in ("decisions", "preferences", "alternatives")})
+                before = copy.deepcopy({k: state[k] for k in FEEDBACK_KEYS})
                 mutate(state)
-                state["history"] = (state["history"] + [previous])[-50:]
+                state["history"] = (state["history"] + [dict(delta=inverse_delta(before, state))])[-50:]
             state["revision"] += 1
             inside(self.root, STORE_NAME)  # recheck a replaced symlink before writing
             atomic_write(self.path, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
@@ -167,6 +223,30 @@ def read_report(path: Path) -> tuple[list[str], list[dict[str, str]]]:
     return fields, rows
 
 
+ORIGINS = ("explicit review", "csv import")
+
+
+def manual_text(choice: str, reason: str) -> str:
+    return f"Manual {choice}: {reason}" if reason else f"Manual {choice}"
+
+
+def moved_decisions(state: dict, current: dict[str, str]) -> dict[str, str]:
+    """Report decisions whose path left the collection while one unannotated photo has the same contents.
+
+    Such a decision is never transferred silently; the status names where it was recorded."""
+    annotated = {d["relative_file"] for d in state["decisions"].values()}
+    orphans: dict[str, list[str]] = {}
+    for decision in state["decisions"].values():
+        if decision["relative_file"] not in current:
+            orphans.setdefault(decision["sha256"], []).append(decision["relative_file"])
+    matches: dict[str, list[str]] = {}
+    for relative, digest in current.items():
+        if digest in orphans and relative not in annotated:
+            matches.setdefault(digest, []).append(relative)
+    return {relatives[0]: f"decision recorded for {orphans[digest][0]}; not transferred"
+            for digest, relatives in matches.items() if len(relatives) == 1 and len(orphans[digest]) == 1}
+
+
 def write_rows(path: Path, fields: list[str], rows: list[dict]) -> None:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
@@ -178,9 +258,12 @@ def write_rows(path: Path, fields: list[str], rows: list[dict]) -> None:
 class Collection:
     """A frozen CSV snapshot with verified identities and confined image paths."""
 
-    def __init__(self, root: Path, report: str = "fotosort_report.csv"):
+    def __init__(self, root: Path, report: str = "fotosort_report.csv", *, verify_sources: bool = True):
+        """verify_sources=False trusts the report's recorded hashes until a photo is actually used:
+        `verify` still hashes every photo before a decision or export relies on it."""
         self.root = root.expanduser().resolve()
         self.report = inside(self.root, report)
+        self.report_stamp = stamp(self.report)
         self.report_digest = fingerprint(self.report)
         self.fields, self.rows = read_report(self.report)
         self.store = ReviewStore(self.root)
@@ -203,6 +286,8 @@ class Collection:
                 original = Path(row["file"])
                 if original.is_absolute():
                     base = self.root if original.is_relative_to(self.root) else old_root
+                    if base is None or not original.is_relative_to(base):
+                        raise ReviewError(f"Report path is outside the collection: {original.name}")
                     relative = original.relative_to(base).as_posix()
                 else:
                     relative = original.as_posix()
@@ -212,11 +297,15 @@ class Collection:
             seen.add(relative)
             path = inside(self.root, relative)
             expected = row.get("photo_sha256", "")
-            digest, status = expected, "available"
+            digest, status, verified = expected, "available", None
             try:
-                digest = fingerprint(path)
-                if expected and digest != expected:
-                    status = "changed"
+                verified = stamp(path)
+                if verify_sources or not expected:
+                    digest = fingerprint(path)
+                    if expected and digest != expected:
+                        status = "changed"
+                else:
+                    verified = None  # not hashed yet; verify() does so on first use
             except OSError:
                 status = "missing"
             identifier = photo_id(relative, digest or "missing")
@@ -235,48 +324,70 @@ class Collection:
                     source = candidate
                 else:
                     source_note = "Processed source unavailable inside this collection; showing original"
-            self.entries[identifier] = dict(id=identifier, relative_file=relative, sha256=digest,
-                                            status=status, path=path, source=source, source_note=source_note, row=row)
+            self.entries[identifier] = dict(id=identifier, relative_file=relative, sha256=digest, status=status,
+                                            path=path, source=source, source_note=source_note, row=row,
+                                            stamp=verified)
         self.ensure_current()
 
     def ensure_current(self):
-        if fingerprint(self.report) != self.report_digest:
-            raise Conflict("Report changed; reopen the reviewer to use the new analysis")
+        """Contents are re-hashed only when size or modification time moved since the last check."""
+        try:
+            current = stamp(self.report)
+            if current != self.report_stamp:
+                if fingerprint(self.report) != self.report_digest:
+                    raise Conflict("Report changed; reopen the reviewer to use the new analysis")
+                self.report_stamp = current
+        except OSError as exc:
+            raise Conflict("Report is no longer available; reopen the reviewer") from exc
 
     def verify(self, identifier: str) -> dict:
         entry = self.entries.get(identifier)
         if entry is None:
             raise ReviewError("Unknown photo")
         path = inside(self.root, entry["relative_file"])
-        if entry["status"] != "available" or not path.is_file() or fingerprint(path) != entry["sha256"]:
-            raise Conflict("Photo is missing or changed; rerun analysis before reviewing it")
+        try:
+            current = stamp(path) if entry["status"] == "available" and path.is_file() else None
+            if current is not None and current != entry["stamp"]:
+                if fingerprint(path) != entry["sha256"]:
+                    current = None
+                else:
+                    entry["stamp"] = current
+        except OSError:
+            current = None
+        if current is None:
+            raise Conflict(f"Photo is missing or changed: {entry['relative_file']}; rerun analysis before reviewing it")
         return entry
 
     def view(self, state: dict | None = None) -> list[dict]:
         state = state if state is not None else self.store.load()
         result = []
         annotated_paths = {d["relative_file"] for d in state["decisions"].values()}
+        moved = moved_decisions(state, {e["relative_file"]: e["sha256"] for e in self.entries.values()})
         for entry in self.entries.values():
             row = entry["row"]
             decision = state["decisions"].get(entry["id"]) if entry["status"] == "available" else None
             auto = row.get("auto_selected", row["selected"]) == "1"
             # A legacy CSV's selected column remains its starting recommendation.
             choice = decision["choice"] if decision else ""
-            stale = entry["relative_file"] in annotated_paths and decision is None
+            stale = entry["relative_file"] in annotated_paths and entry["id"] not in state["decisions"]
             result.append(dict(id=entry["id"], relative_file=entry["relative_file"], sha256=entry["sha256"],
                                status=entry["status"], source_note=entry["source_note"], auto_selected=auto,
                                selected=(choice == "keep") if choice else auto, manual_decision=choice,
                                manual_reason=decision.get("note", "") if decision else "",
-                               review_status="stale decision" if stale and not decision else entry["status"],
+                               review_status="stale decision" if stale and not decision
+                               else moved.get(entry["relative_file"], entry["status"]),
+                               clearable=entry["relative_file"] in annotated_paths,
                                **{k: row.get(k, "") for k in ("day", "datetime", "label", "judge_label", "scene",
                                    "moment", "burst", "score", "shortlisted", "judge_reason", "preselection_reason")},
                                auto_decision=row.get("auto_decision", row.get("decision", ""))))
         return result
 
     def change(self, revision: int, changes: dict[str, str], note: str = "", *, preference=None,
-               alternatives=None) -> dict:
+               alternatives=None, origin: str = "explicit review") -> dict:
         if not isinstance(changes, dict) or not isinstance(note, str) or len(note) > 4000:
             raise ReviewError("Invalid decisions or note")
+        if origin not in ORIGINS:
+            raise ReviewError("Unknown decision origin")
 
         def mutate(state):
             self.ensure_current()
@@ -293,12 +404,15 @@ class Collection:
                 else:
                     entry = self.verify(identifier)
                     state["decisions"][identifier] = dict(relative_file=entry["relative_file"],
-                        sha256=entry["sha256"], choice=choice, note=note, updated_at=now, origin="explicit review")
+                        sha256=entry["sha256"], choice=choice, note=note, updated_at=now, origin=origin)
             if preference is not None:
                 if not isinstance(preference, list) or len(preference) != 2 or preference[0] == preference[1]:
                     raise ReviewError("Preference needs two different photos: winner, loser")
                 for identifier in preference:
                     self.verify(identifier)
+                # A changed mind replaces the earlier verdict on the same pair instead of contradicting it.
+                state["preferences"] = [p for p in state["preferences"]
+                                        if {p["winner"], p["loser"]} != set(preference)]
                 state["preferences"].append(dict(winner=preference[0], loser=preference[1], note=note, updated_at=now))
             if alternatives is not None:
                 name, identifiers = alternatives
@@ -317,8 +431,10 @@ class Collection:
 
     def export(self, output: str, revision: int) -> Path:
         destination = inside(self.root, output)
-        if destination.suffix.lower() != ".csv" or destination == self.store.path:
+        if destination.suffix.lower() != ".csv":
             raise ReviewError("Export must be a CSV inside the collection")
+        if destination.exists() and destination.samefile(self.report):
+            raise ReviewError("Export would overwrite the report being reviewed; choose another output name")
         with self.store.locked():
             state = self.store.load()
             if revision != state["revision"]:
@@ -327,7 +443,9 @@ class Collection:
             rows = []
             for view in self.view(state):
                 entry = self.entries[view["id"]]
-                if view["selected"]:
+                # Missing or changed picks stay visible through review_status (and the recorded hash)
+                # instead of blocking the export; apply-report counts or refuses them explicitly.
+                if view["selected"] and entry["status"] == "available":
                     self.verify(view["id"])
                 row = dict(entry["row"])
                 row.update(file=str(entry["path"]), relative_file=entry["relative_file"],
@@ -338,7 +456,10 @@ class Collection:
                            manual_reason=view["manual_reason"], review_status=view["review_status"],
                            review_revision=str(revision))
                 if view["manual_decision"]:
-                    row["decision"] = f"Manual {view['manual_decision']}: {view['manual_reason']}".rstrip(": ")
+                    row["decision"] = manual_text(view["manual_decision"], view["manual_reason"])
+                elif "auto_decision" in entry["row"]:
+                    # A cleared override returns to the automatic explanation, not the earlier manual text.
+                    row["decision"] = view["auto_decision"]
                 if row["photo_sha256"]:
                     row["photo_id"] = photo_id(row["relative_file"], row["photo_sha256"])
                 rows.append(row)
@@ -347,13 +468,19 @@ class Collection:
         return destination
 
 
-def apply_manual_decisions(photos, root: Path) -> None:
-    """Overlay explicit choices after selection, preserving automated provenance."""
-    state = ReviewStore(root).load()
+def apply_manual_decisions(photos, root: Path, state: dict | None = None) -> list[str]:
+    """Overlay explicit choices after selection, preserving automated provenance.
+
+    Returns warnings about decisions that no longer match a photo; nothing is transferred silently."""
+    state = state if state is not None else ReviewStore(root).load()
     paths_with_choices = {d["relative_file"] for d in state["decisions"].values()}
+    current = {}
     for photo in photos:
-        photo.auto_selected, photo.auto_decision = photo.selected, photo.decision
+        if photo.auto_selected is None:  # --include already recorded the automatic result
+            photo.auto_selected, photo.auto_decision = photo.selected, photo.decision
         relative = photo.path.relative_to(root).as_posix()
+        source = getattr(photo, "source", None)
+        current[relative] = getattr(photo, "digest", "") if source is None or source == photo.path else ""
         photo.review_revision = state["revision"]
         if relative not in paths_with_choices:
             continue
@@ -362,11 +489,25 @@ def apply_manual_decisions(photos, root: Path) -> None:
         except OSError:
             photo.review_status = "missing"
             continue
+        except ReviewError:  # changed while reading, or a path the store cannot address
+            photo.review_status = "stale decision"
+            continue
         decision = state["decisions"].get(photo_id(relative, digest))
         if decision:
             photo.manual_decision, photo.manual_reason = decision["choice"], decision.get("note", "")
             photo.selected = decision["choice"] == "keep"
-            photo.decision = f"Manual {decision['choice']}: {photo.manual_reason}".rstrip(": ")
+            photo.decision = manual_text(decision["choice"], photo.manual_reason)
             photo.review_status = "applied"
         else:
             photo.review_status = "stale decision"
+    moved = moved_decisions(state, current)
+    for photo in photos:
+        status = moved.get(photo.path.relative_to(root).as_posix())
+        if status:
+            photo.review_status = status
+    orphaned = sorted(paths_with_choices - current.keys())
+    warnings = [f"{relative}: {status}" for relative, status in sorted(moved.items())]
+    if orphaned:
+        warnings.append(f"{len(orphaned)} manual decision(s) refer to photos that are no longer in this collection "
+                        f"(for example {orphaned[0]}); they were not applied. `fotosort decisions show` lists them.")
+    return warnings

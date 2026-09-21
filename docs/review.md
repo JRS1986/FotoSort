@@ -12,19 +12,24 @@ no analysis or judging. Filter by day, subject, scene, moment, or judge exposure
 all report frames are available, including excluded alternatives. Pin a reference
 and browse nearby frames in capture order. Fit and 100% views synchronize zoom
 and pan; drag either native-resolution image, or focus it and use arrow keys.
-Full RAW decoding is deferred until you request native detail.
+Full RAW decoding is deferred until you request native detail; at 100% a JPEG
+source is shown as the file itself, without re-encoding.
 
 Keep (`K`), reject (`X`), clear (`C`), pin (`P`), and undo (`Z`) have keyboard
 shortcuts. Arrow keys browse frames outside a zoomed image. **Use candidate
 instead** atomically rejects the reference, keeps the candidate, and records a
 pairwise preference. **Prefer candidate** and **Both acceptable** record feedback
-without changing picks. Add a review note before taking an action.
+without changing picks. Add a review note before taking an action. The note
+field always shows the saved note of the candidate frame, including when a
+filter or a saved choice moves the selection to another frame.
 
 **Export reviewed CSV** writes `fotosort_reviewed.csv` in the collection. It can
-then be applied using the command below. A stale session displays a conflict;
-use **Reload** to refresh before editing again. Changed/missing sources remain
-visible, and selected unavailable sources block export instead of silently
-dropping picks. Stop the server with Ctrl+C.
+then be applied using the command below. An export never replaces the report
+being reviewed: reviewing `fotosort_reviewed.csv` itself exports to
+`fotosort_reviewed_2.csv`. A stale session displays a conflict; use **Reload**
+to refresh before editing again. Changed/missing sources remain visible, and
+selected unavailable sources are exported with their `review_status` instead of
+being silently dropped. Stop the server with Ctrl+C.
 
 The server binds only to `127.0.0.1` on an automatically selected port. `--port`
 chooses a port; `--no-browser` prints the URL without launching a browser. The
@@ -32,8 +37,13 @@ printed URL carries a random session token: keep it local. Requests check the
 host, origin, and token; image paths are restricted to report entries inside
 the collection. The UI has no remote scripts, fonts, or image uploads.
 Thumbnails are loaded lazily, with 48 frames per page and a 32 MiB image cache.
-Decoding is serialized, so peak image memory depends on one source's resolution,
-not the number of simultaneous browser requests.
+Opening the reviewer reads no photo when the report records content hashes: a
+photo is hashed when it is first shown or decided, and read again only after its
+size or modification time changed. Connections are accepted concurrently, so an
+idle or slow connection cannot stall the page, while requests are still handled
+one at a time: peak image memory depends on one source's resolution, not the
+number of simultaneous browser requests. Error messages sent to the browser
+never contain absolute paths.
 
 ## Command-line decisions
 
@@ -76,7 +86,9 @@ fotosort decisions /path/to/photos --report edited.csv import
 ```
 
 Import records **every row** as keep or reject according to `selected`, including
-zero rows. Opening a legacy report alone never infers negative feedback. Existing
+zero rows, and marks those decisions with the origin `csv import` so they stay
+distinguishable from choices made one photo at a time. Opening a legacy report
+alone never infers negative feedback. Existing
 `--apply-report` continues to honor the supplied CSV; export after a review edit
 before applying it. Use the same `--recursive` setting for subfolder exports.
 
@@ -84,13 +96,23 @@ before applying it. Use the same `--recursive` setting for subfolder exports.
 
 Identity combines the original photo's relative path and SHA-256 content digest.
 Moving the whole collection preserves decisions. Same-named files in different
-subfolders remain distinct, even if byte-identical. Individual file renames do
-not automatically transfer decisions. Changed files are flagged and cannot
-inherit old choices; rerun analysis to review their new content. Missing files
-remain visible. A stale decision can be cleared without restoring the old file.
+subfolders remain distinct, even if byte-identical. Individual file renames or
+moves inside the collection do not transfer decisions: the next analysis warns
+about decisions whose photo is gone, and when exactly one unannotated photo has
+the same contents its `review_status` names the path the decision was recorded
+for. Changed files are flagged and cannot inherit old choices; rerun analysis to
+review their new content. Missing or changed picks remain visible in exports
+through `review_status` rather than blocking them; `--apply-report` counts
+missing picks and refuses changed ones. A stale decision can be cleared without
+restoring the old file. A pairwise preference for a pair replaces an earlier
+preference for the same pair.
 
-The first review of a report verifies source contents; on large RAW collections
-this requires reading the originals. Images are never changed by this process.
+`fotosort decisions` trusts the content hashes recorded in the report until a
+photo is used: setting a decision hashes that photo, and an export hashes the
+effective picks. Legacy reports without hashes are read in full on opening.
+After a photo has been verified, its size and modification time decide whether
+it must be read again. `--apply-report` verifies the picks it is about to copy
+or move. Images are never changed by this process.
 Processed sources outside the collection are not exposed by review tools; the
 original is used instead, with an explicit notice.
 
@@ -104,7 +126,9 @@ review formats are rejected rather than reset.
 
 The document has `version`, monotonic `revision`, `decisions` keyed by photo ID,
 `preferences` (winner/loser IDs with notes), named `alternatives` (acceptable photo
-IDs for one moment), and a bounded `history` for undo. Decisions retain relative
-path, content hash, choice, note, timestamp, and explicit-review provenance.
+IDs for one moment), and a bounded `history` for undo. Each history entry stores
+only the previous values of what an edit changed. Decisions retain relative
+path, content hash, choice, note, timestamp, and their origin (`explicit review`
+or `csv import`).
 Treat this as local data: notes and relative filenames can be personal. The
 evaluation harness can use anonymous IDs for shareable summaries.
