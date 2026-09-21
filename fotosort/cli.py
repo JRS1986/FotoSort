@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import math
 import os
 import shutil
@@ -35,6 +36,15 @@ from fotosort.quality import (
     subject_embedding_crop,
     subject_focus,
     to_gray,
+)
+from fotosort.review_data import (
+    REVIEW_FIELDS,
+    ReviewError,
+    ReviewStore,
+    apply_manual_decisions,
+    atomic_write,
+    fingerprint,
+    photo_id,
 )
 from fotosort.scan import find_images, is_raw, raw_sibling, read_exif, sidecars
 from fotosort.selection import (
@@ -108,6 +118,12 @@ class Photo:
     reject: str = ""
     selected: bool = False
     decision: str = ""
+    auto_selected: bool | None = None
+    auto_decision: str = ""
+    manual_decision: str = ""
+    manual_reason: str = ""
+    review_status: str = ""
+    review_revision: int = 0
 
     @property
     def day(self) -> str:
@@ -762,8 +778,9 @@ def apply_person_override(photos: list[Photo], min_area: float, min_agree: float
 
 
 def forced_includes(photos: list[Photo], spec: str) -> list[Photo]:
-    """Resolve --include (stems, file names, or @file) to photos; they are never
-    rejected and always end up selected."""
+    """Resolve --include without changing eligibility for automatic selection.
+
+    The caller applies these human choices after recording the automatic result."""
     if not spec:
         return []
     if spec.startswith("@"):
@@ -772,8 +789,6 @@ def forced_includes(photos: list[Photo], spec: str) -> list[Photo]:
         names = [n.strip() for n in spec.split(",") if n.strip()]
     wanted = {Path(n).stem.lower() for n in names}
     found = [ph for ph in photos if ph.path.stem.lower() in wanted]
-    for ph in found:
-        ph.reject = ""
     missing = wanted - {ph.path.stem.lower() for ph in found}
     if missing:
         print(f"--include: not found in this folder: {', '.join(sorted(missing))}")
@@ -1147,13 +1162,23 @@ def write_report(photos: list[Photo], path: Path, root: Path | None = None) -> N
             "editorial_score", "editorial_bonus", "moment", "moment_novelty", "subject_embedding",
             "focus_rank", "detail_focus", "refined_focus_adjustment", "focus_refinement", "preselection_reason",
             "burst", "subject_box_count", "interaction_embedding", *[f"burst_{name}" for name in BURST_PROMPTS],
-            "judge_label", "award_rank", "award_moment", "award_special_moment", "award_exceptional_reason"]
+            "judge_label", "award_rank", "award_moment", "award_special_moment", "award_exceptional_reason",
+            *REVIEW_FIELDS]
     def metric(value):
         return f"{value:.4f}" if value is not None else ""
-    with open(path, "w", newline="") as f:
+    with io.StringIO(newline="") as f:
         wr = csv.writer(f)
         wr.writerow(cols)
         for ph in sorted(photos, key=lambda p: (p.day, p.label, -p.score)):
+            relative = os.path.relpath(ph.path, root)
+            digest = ph.digest if not ph.source or ph.source == ph.path else ""
+            try:
+                if not digest and ph.path.is_file():
+                    digest = fingerprint(ph.path)
+                identity = photo_id(relative, digest) if digest else ""
+            except (OSError, ReviewError):
+                # The report is still written; this row simply cannot carry a review identity.
+                identity = digest = ""
             wr.writerow([
                 str(ph.path), ph.time.isoformat() if ph.time else "", ph.day, ph.label,
                 f"{ph.label_prob:.2f}", f"{ph.person:.3f}", f"{ph.subject:.3f}", int(ph.edge), ph.scene,
@@ -1177,7 +1202,12 @@ def write_report(photos: list[Photo], path: Path, root: Path | None = None) -> N
                 ph.award_assessment.moment if ph.award_assessment else "",
                 int(ph.award_assessment.special_moment) if ph.award_assessment else "",
                 ph.award_assessment.exceptional_reason if ph.award_assessment else "",
+                identity, digest,
+                int(ph.selected if ph.auto_selected is None else ph.auto_selected),
+                (ph.auto_decision if ph.auto_selected is not None else ph.decision) or ph.reject,
+                ph.manual_decision, ph.manual_reason, ph.review_status, ph.review_revision,
             ])
+        atomic_write(path, f.getvalue())
 
 
 def write_sidecars(photos: list[Photo], args) -> None:
@@ -1249,6 +1279,13 @@ def main(argv=None) -> int:
     if args.apply_report:
         return apply_report(photos, root, args)
 
+    # Read manual decisions before any expensive analysis or judge call can be wasted on a bad store.
+    try:
+        ReviewStore(root).load()
+    except (OSError, ReviewError) as exc:
+        print(f"Review error: {exc}", file=sys.stderr)
+        return 2
+
     emb = compute_features(photos, root, args)
     unreadable = [ph for ph in photos if ph.emb is None]
     photos = [ph for ph in photos if ph.emb is not None]
@@ -1279,8 +1316,19 @@ def main(argv=None) -> int:
         print(f"Local candidate plan: {report}. No judge calls or photo exports.")
         return 0
     for ph in forced:
+        # --include is a human choice: keep the automatic result separate, as for manual decisions.
+        ph.auto_selected, ph.auto_decision = ph.selected, ph.decision or ph.reject
+        ph.reject = ""
         ph.selected, ph.judge_reason = True, "forced by --include"
         ph.decision = "Forced by --include"
+    # A review may have been saved while features or judge results were being computed.
+    try:
+        review_state = ReviewStore(root).load()
+    except (OSError, ReviewError) as exc:
+        print(f"Review error: {exc}", file=sys.stderr)
+        return 2
+    for warning in apply_manual_decisions(photos, root, review_state):
+        print(f"Review: {warning}", file=sys.stderr)
     if judge is not None and args.judge_species and args.mode != "award-roll":
         name_pick_subjects([ph for ph in photos if ph.selected], judge, labels)
     if judge is not None:
@@ -1288,7 +1336,13 @@ def main(argv=None) -> int:
 
     editing_advice(photos, emb, args)
     report = root / args.report
-    write_report(photos + unreadable, report, root)
+    store = ReviewStore(root)
+    with store.locked():
+        if store.load()["revision"] != review_state["revision"]:
+            print("Review changed while finishing analysis; rerun to apply the latest decisions. "
+                  "The report and photo exports were not updated.", file=sys.stderr)
+            return 2
+        write_report(photos + unreadable, report, root)
     if args.xmp:
         write_sidecars(photos, args)
     if args.raw_cull:
@@ -1460,6 +1514,18 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
             r = by_name[ph.path.name][0]
         matches.append((ph, r))
     # Resolve every row before allowing copy, move, enhancement or RAW culling.
+    # RAW culling also acts on unselected photos: their old rejection cannot apply to new contents.
+    for ph, row in matches:
+        if not row or not row.get("photo_sha256"):
+            continue
+        if row.get("selected") != "1" and not args.raw_cull:
+            continue
+        try:
+            changed = fingerprint(ph.path) != row["photo_sha256"]
+        except (OSError, ReviewError):
+            changed = True
+        if changed:
+            raise SystemExit(f"Photo changed since this report: {ph.path.name}; rerun analysis before applying it.")
     picks, matched = [], set()
     for ph, r in matches:
         if r is not None:

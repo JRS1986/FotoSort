@@ -49,6 +49,10 @@ columns intact. `--apply-report` uses those selections without repeating the
 selection process. Use the same `--recursive` setting if the original run
 included subfolders.
 
+For choices that survive analysis reruns, use
+[`fotosort decisions`](docs/review.md). It preserves the automated recommendation
+separately and exports reviewed selections for the same `--apply-report` workflow.
+
 You can also extract the release's source archive and run the installation
 commands from that directory, or install its wheel with `pip install /path/to/file.whl`.
 For judge support, install `pip install ".[judge]"` from the source directory.
