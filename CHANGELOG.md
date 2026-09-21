@@ -10,8 +10,11 @@ All notable changes to FotoSort are documented here. The format follows
 - Persist explicit keep/reject choices, pairwise preferences, and acceptable
   alternatives with `fotosort decisions`; retain automatic report provenance,
   protect concurrent edits, and export reviewed CSVs without model calls.
-- Verify content identities before applying new-format reports; changed files
-  cannot silently inherit reviewed selections.
+- Verify the content identities of picks before applying new-format reports;
+  changed files cannot silently inherit reviewed selections.
+- Record `--include` picks and bulk CSV imports separately from automatic picks
+  and one-by-one review choices. Warn when a decision's photo has moved or
+  left the collection, and validate the review record before analysis starts.
 
 ### Documentation
 - Add an issue-first contribution workflow, bug/feature and pull-request

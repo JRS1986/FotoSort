@@ -37,7 +37,15 @@ from fotosort.quality import (
     subject_focus,
     to_gray,
 )
-from fotosort.review_data import REVIEW_FIELDS, apply_manual_decisions, atomic_write, fingerprint, photo_id
+from fotosort.review_data import (
+    REVIEW_FIELDS,
+    ReviewError,
+    ReviewStore,
+    apply_manual_decisions,
+    atomic_write,
+    fingerprint,
+    photo_id,
+)
 from fotosort.scan import find_images, is_raw, raw_sibling, read_exif, sidecars
 from fotosort.selection import (
     ScenedCandidate,
@@ -1165,8 +1173,13 @@ def write_report(photos: list[Photo], path: Path, root: Path | None = None) -> N
         for ph in sorted(photos, key=lambda p: (p.day, p.label, -p.score)):
             relative = os.path.relpath(ph.path, root)
             digest = ph.digest if not ph.source or ph.source == ph.path else ""
-            if not digest and ph.path.is_file():
-                digest = fingerprint(ph.path)
+            try:
+                if not digest and ph.path.is_file():
+                    digest = fingerprint(ph.path)
+                identity = photo_id(relative, digest) if digest else ""
+            except (OSError, ReviewError):
+                # The report is still written; this row simply cannot carry a review identity.
+                identity = digest = ""
             wr.writerow([
                 str(ph.path), ph.time.isoformat() if ph.time else "", ph.day, ph.label,
                 f"{ph.label_prob:.2f}", f"{ph.person:.3f}", f"{ph.subject:.3f}", int(ph.edge), ph.scene,
@@ -1190,9 +1203,9 @@ def write_report(photos: list[Photo], path: Path, root: Path | None = None) -> N
                 ph.award_assessment.moment if ph.award_assessment else "",
                 int(ph.award_assessment.special_moment) if ph.award_assessment else "",
                 ph.award_assessment.exceptional_reason if ph.award_assessment else "",
-                photo_id(relative, digest) if digest else "", digest,
+                identity, digest,
                 int(ph.selected if ph.auto_selected is None else ph.auto_selected),
-                ph.auto_decision if ph.auto_selected is not None else ph.decision,
+                (ph.auto_decision if ph.auto_selected is not None else ph.decision) or ph.reject,
                 ph.manual_decision, ph.manual_reason, ph.review_status, ph.review_revision,
             ])
         atomic_write(path, f.getvalue())
@@ -1267,6 +1280,13 @@ def main(argv=None) -> int:
     if args.apply_report:
         return apply_report(photos, root, args)
 
+    # Read manual decisions before any expensive analysis or judge call can be wasted on a bad store.
+    try:
+        review_state = ReviewStore(root).load()
+    except (OSError, ReviewError) as exc:
+        print(f"Review error: {exc}", file=sys.stderr)
+        return 2
+
     emb = compute_features(photos, root, args)
     unreadable = [ph for ph in photos if ph.emb is None]
     photos = [ph for ph in photos if ph.emb is not None]
@@ -1297,9 +1317,12 @@ def main(argv=None) -> int:
         print(f"Local candidate plan: {report}. No judge calls or photo exports.")
         return 0
     for ph in forced:
+        # --include is a human choice: keep the automatic result separate, as for manual decisions.
+        ph.auto_selected, ph.auto_decision = ph.selected, ph.decision or ph.reject
         ph.selected, ph.judge_reason = True, "forced by --include"
         ph.decision = "Forced by --include"
-    apply_manual_decisions(photos, root)
+    for warning in apply_manual_decisions(photos, root, review_state):
+        print(f"Review: {warning}", file=sys.stderr)
     if judge is not None and args.judge_species and args.mode != "award-roll":
         name_pick_subjects([ph for ph in photos if ph.selected], judge, labels)
     if judge is not None:
@@ -1479,8 +1502,15 @@ def apply_report(photos: list[Photo], root: Path, args) -> int:
             r = by_name[ph.path.name][0]
         matches.append((ph, r))
     # Resolve every row before allowing copy, move, enhancement or RAW culling.
+    # Only picks are copied, moved or enhanced, so only their contents need to match the report.
     for ph, row in matches:
-        if row and row.get("photo_sha256") and fingerprint(ph.path) != row["photo_sha256"]:
+        if not row or row.get("selected") != "1" or not row.get("photo_sha256"):
+            continue
+        try:
+            changed = fingerprint(ph.path) != row["photo_sha256"]
+        except (OSError, ReviewError):
+            changed = True
+        if changed:
             raise SystemExit(f"Photo changed since this report: {ph.path.name}; rerun analysis before applying it.")
     picks, matched = [], set()
     for ph, r in matches:

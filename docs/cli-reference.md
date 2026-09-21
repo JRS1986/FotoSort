@@ -74,14 +74,15 @@ and identity rules.
 
 | Command / option | Default | Meaning |
 |---|---|---|
+| `--report FILE` | fotosort_report.csv | Report inside the photo folder to review |
 | `set FILE... --choice keep\|reject\|clear` | choice required | Set or clear explicit overrides using relative paths |
 | `set` / `prefer --note TEXT` | empty | Record a human explanation |
 | `prefer WINNER LOSER` | | Record a pairwise preference without changing selection |
 | `alternatives NAME FILE...` | | Record acceptable alternatives for a moment |
 | `undo` | last edit | Restore previous decisions and feedback, up to 50 edits |
 | `show` | | Print the current review record without undo history |
-| `import` | all report rows | Explicitly convert this report's selected column into keep/reject choices |
-| `export --output FILE` | fotosort_reviewed.csv | Export effective selections to a CSV inside the photo folder |
+| `import` | all report rows | Explicitly convert this report's selected column into keep/reject choices, recorded with the origin `csv import` |
+| `export --output FILE` | fotosort_reviewed.csv | Export effective selections to a CSV inside the photo folder; never the report being reviewed |
 
 ## Standalone enhancement
 
