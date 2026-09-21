@@ -7,6 +7,12 @@ All notable changes to FotoSort are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Add a local visual reviewer for existing reports: compare excluded neighbours,
+  synchronize native zoom/pan, record manual choices and feedback, undo edits,
+  and export reviewed CSVs. Images and review requests remain local.
+  Notes stay attached to the frame they were written for, an idle connection
+  cannot stall the session, photos are hashed when first used rather than on
+  every request, and the reviewer's HTML, CSS and JavaScript are readable source.
 - Persist explicit keep/reject choices, pairwise preferences, and acceptable
   alternatives with `fotosort decisions`; retain automatic report provenance,
   protect concurrent edits, and export reviewed CSVs without model calls.
@@ -17,6 +23,8 @@ All notable changes to FotoSort are documented here. The format follows
   left the collection, and validate the review record before analysis starts.
 
 ### Fixed
+- Keep changed-source errors visible after reviewer reload, and reverify photos
+  restored after being missing even if their modification time is unchanged.
 - Verify unselected report photos before RAW culling, refresh manual choices
   after analysis, and stop report/export writes if a later review edit conflicts.
 - Apply forced includes after automatic selection and expose changed or missing

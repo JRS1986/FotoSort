@@ -66,6 +66,17 @@ match v0.1.0. Provider model access depends on your account or server.
 | `--limit N` | | only process the first N files |
 | `--batch-size` / `--workers` | 32 / 4 | GPU batch size and decoder threads |
 
+## Visual review
+
+`fotosort review FOLDER` opens the existing report in a local browser reviewer.
+See [the review guide](review.md) for controls, exports, and local access rules.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--report` | fotosort_report.csv | Existing CSV inside the collection |
+| `--port` | 0 | Choose an available loopback port; set a number to use a fixed port |
+| `--no-browser` | off | Print the session URL without opening a browser |
+
 ## Persistent decisions
 
 `fotosort decisions FOLDER [--report fotosort_report.csv] COMMAND` edits local

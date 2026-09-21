@@ -44,6 +44,10 @@ Issues = "https://github.com/JRS1986/FotoSort/issues"
 
 [tool.setuptools]
 packages = ["fotosort"]
+include-package-data = false
+
+[tool.setuptools.package-data]
+fotosort = ["static/*.html", "static/*.css", "static/*.js"]
 
 [tool.ruff]
 line-length = 120
