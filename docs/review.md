@@ -76,7 +76,9 @@ fotosort decisions /path/to/photos --report edited.csv import
 ```
 
 Import records **every row** as keep or reject according to `selected`, including
-zero rows. Opening a legacy report alone never infers negative feedback. Existing
+zero rows, and marks those decisions with the origin `csv import` so they stay
+distinguishable from choices made one photo at a time. Opening a legacy report
+alone never infers negative feedback. Existing
 `--apply-report` continues to honor the supplied CSV; export after a review edit
 before applying it. Use the same `--recursive` setting for subfolder exports.
 
@@ -84,13 +86,23 @@ before applying it. Use the same `--recursive` setting for subfolder exports.
 
 Identity combines the original photo's relative path and SHA-256 content digest.
 Moving the whole collection preserves decisions. Same-named files in different
-subfolders remain distinct, even if byte-identical. Individual file renames do
-not automatically transfer decisions. Changed files are flagged and cannot
-inherit old choices; rerun analysis to review their new content. Missing files
-remain visible. A stale decision can be cleared without restoring the old file.
+subfolders remain distinct, even if byte-identical. Individual file renames or
+moves inside the collection do not transfer decisions: the next analysis warns
+about decisions whose photo is gone, and when exactly one unannotated photo has
+the same contents its `review_status` names the path the decision was recorded
+for. Changed files are flagged and cannot inherit old choices; rerun analysis to
+review their new content. Missing or changed picks remain visible in exports
+through `review_status` rather than blocking them; `--apply-report` counts
+missing picks and refuses changed ones. A stale decision can be cleared without
+restoring the old file. A pairwise preference for a pair replaces an earlier
+preference for the same pair.
 
-The first review of a report verifies source contents; on large RAW collections
-this requires reading the originals. Images are never changed by this process.
+`fotosort decisions` trusts the content hashes recorded in the report until a
+photo is used: setting a decision hashes that photo, and an export hashes the
+effective picks. Legacy reports without hashes are read in full on opening.
+After a photo has been verified, its size and modification time decide whether
+it must be read again. `--apply-report` verifies the picks it is about to copy
+or move. Images are never changed by this process.
 Processed sources outside the collection are not exposed by review tools; the
 original is used instead, with an explicit notice.
 
@@ -104,7 +116,9 @@ review formats are rejected rather than reset.
 
 The document has `version`, monotonic `revision`, `decisions` keyed by photo ID,
 `preferences` (winner/loser IDs with notes), named `alternatives` (acceptable photo
-IDs for one moment), and a bounded `history` for undo. Decisions retain relative
-path, content hash, choice, note, timestamp, and explicit-review provenance.
+IDs for one moment), and a bounded `history` for undo. Each history entry stores
+only the previous values of what an edit changed. Decisions retain relative
+path, content hash, choice, note, timestamp, and their origin (`explicit review`
+or `csv import`).
 Treat this as local data: notes and relative filenames can be personal. The
 evaluation harness can use anonymous IDs for shareable summaries.

@@ -1,5 +1,6 @@
 """Inspect and edit persistent human decisions without running image models."""
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -29,7 +30,8 @@ def main(argv=None) -> int:
     export.add_argument("--output", default="fotosort_reviewed.csv")
     args = parser.parse_args(argv)
     try:
-        collection = Collection(args.folder, args.report)
+        # Photos are hashed when a decision or export relies on them, not on every command.
+        collection = Collection(args.folder, args.report, verify_sources=False)
         state = collection.store.load()
         by_name = {e["relative_file"]: e["id"] for e in collection.entries.values()}
 
@@ -57,8 +59,8 @@ def main(argv=None) -> int:
         elif args.command == "import":
             state = collection.change(state["revision"], {
                 e["id"]: "keep" if e["row"]["selected"] == "1" else "reject" for e in collection.entries.values()
-            }, note="Explicit CSV import")
+            }, note="Explicit CSV import", origin="csv import")
         print(f"Saved review revision {state['revision']}")
         return 0
-    except (OSError, ReviewError) as exc:
+    except (OSError, ReviewError, UnicodeDecodeError, csv.Error) as exc:
         parser.exit(2, f"Review error: {exc}\n")

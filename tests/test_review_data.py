@@ -1,4 +1,6 @@
 import csv
+import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -6,7 +8,15 @@ from PIL import Image
 
 from fotosort.cli import Photo, apply_report, parse_args, write_report
 from fotosort.decisions import main
-from fotosort.review_data import Collection, Conflict, ReviewError, ReviewStore, apply_manual_decisions, fingerprint
+from fotosort.review_data import (
+    Collection,
+    Conflict,
+    ReviewError,
+    ReviewStore,
+    apply_manual_decisions,
+    fingerprint,
+    relative_name,
+)
 
 
 def collection(root, names=("a.jpg", "b.jpg")):
@@ -125,7 +135,11 @@ def test_export_roundtrip_and_changed_source_refused_before_copy(tmp_path):
     args = parse_args([str(tmp_path), "--apply-report", "--report", "reviewed.csv", "--copy"])
     assert apply_report(photos, tmp_path, args) == 0
     assert sorted(p.name for p in (tmp_path / "Highlights").iterdir()) == ["b.jpg"]
+    # A changed frame that is not a pick is never copied, so it does not block the picks.
     (tmp_path / "a.jpg").write_bytes(b"new content")
+    fresh = [Photo(tmp_path / "a.jpg", "a"), Photo(tmp_path / "b.jpg", "b")]
+    assert apply_report(fresh, tmp_path, args) == 0
+    (tmp_path / "b.jpg").write_bytes(b"new content")
     fresh = [Photo(tmp_path / "a.jpg", "a"), Photo(tmp_path / "b.jpg", "b")]
     with pytest.raises(SystemExit, match="changed"):
         apply_report(fresh, tmp_path, args)
@@ -183,3 +197,157 @@ def test_external_processed_source_is_not_followed(tmp_path):
     entry = next(iter(Collection(tmp_path).entries.values()))
     assert entry["source"] == tmp_path / "a.jpg"
     assert "showing original" in entry["source_note"]
+
+
+def test_colon_in_names_is_an_ordinary_posix_character(tmp_path):
+    # Finder stores "Safari 5/12" as "Safari 5:12"; only a bare Windows drive is refused.
+    c, _ = collection(tmp_path, ("Safari 5:12/IMG:1.jpg", "b.jpg"))
+    assert [e["relative_file"] for e in c.entries.values()] == ["Safari 5:12/IMG:1.jpg", "b.jpg"]
+    assert all(row["photo_id"] for row in c.rows)
+    with pytest.raises(ReviewError):
+        relative_name("C:/Users/photo.jpg")
+
+
+def test_cleared_override_exports_the_automatic_explanation(tmp_path):
+    c, photos = collection(tmp_path)
+    a, _ = list(c.entries)
+    c.change(0, {a: "reject"}, "Soft eyes")
+    apply_manual_decisions(photos, tmp_path)
+    write_report(photos, c.report, tmp_path)
+    rerun = Collection(tmp_path)
+    assert rerun.rows[0]["decision"] == "Manual reject: Soft eyes"
+    rerun.change(1, {a: "clear"})
+    with rerun.export("reviewed.csv", 2).open() as stream:
+        row = next(csv.DictReader(stream))
+    assert (row["selected"], row["manual_decision"], row["decision"]) == ("1", "", "Selected by score")
+
+
+def test_manual_reason_keeps_its_own_punctuation(tmp_path):
+    c, _ = collection(tmp_path)
+    a, _ = list(c.entries)
+    c.change(0, {a: "keep"}, "Compare with frame 12:")
+    with c.export("reviewed.csv", 1).open() as stream:
+        assert next(csv.DictReader(stream))["decision"] == "Manual keep: Compare with frame 12:"
+
+
+def test_missing_pick_stays_visible_without_blocking_export(tmp_path):
+    c, _ = collection(tmp_path)
+    (tmp_path / "a.jpg").unlink()
+    reopened = Collection(tmp_path)
+    with reopened.export("reviewed.csv", 0).open() as stream:
+        rows = list(csv.DictReader(stream))
+    assert [(r["selected"], r["review_status"]) for r in rows] == [("1", "missing"), ("0", "available")]
+    with pytest.raises(Conflict, match="a.jpg"):
+        reopened.change(0, {next(iter(reopened.entries)): "reject"})
+
+
+def test_export_refuses_to_replace_the_open_report(tmp_path):
+    c, _ = collection(tmp_path)
+    before = c.report.read_bytes()
+    with pytest.raises(ReviewError, match="overwrite the report"):
+        c.export("fotosort_report.csv", 0)
+    assert c.report.read_bytes() == before
+
+
+def test_photo_moved_inside_the_collection_is_reported_not_transferred(tmp_path):
+    c, photos = collection(tmp_path, ("sub/a.jpg", "b.jpg"))
+    a, _ = list(c.entries)
+    c.change(0, {a: "reject"})
+    (tmp_path / "other").mkdir()
+    (tmp_path / "sub/a.jpg").rename(tmp_path / "other/a.jpg")
+    moved = [Photo(tmp_path / "other/a.jpg", "a", selected=True, digest=fingerprint(tmp_path / "other/a.jpg")),
+             Photo(tmp_path / "b.jpg", "b", digest=fingerprint(tmp_path / "b.jpg"))]
+    warnings = apply_manual_decisions(moved, tmp_path)
+    assert moved[0].selected and moved[0].manual_decision == ""
+    assert moved[0].review_status == "decision recorded for sub/a.jpg; not transferred"
+    assert any("sub/a.jpg" in w for w in warnings) and any("no longer in this collection" in w for w in warnings)
+    write_report(moved, c.report, tmp_path)
+    assert Collection(tmp_path).view()[0]["review_status"] == "decision recorded for sub/a.jpg; not transferred"
+
+
+def test_undo_history_stores_changes_not_copies_of_the_state(tmp_path):
+    names = tuple(f"{i:03}.jpg" for i in range(40))
+    c, _ = collection(tmp_path, names)
+    ids = list(c.entries)
+    state = c.change(0, dict.fromkeys(ids, "keep"))
+    baseline = len(c.store.path.read_bytes())
+    for identifier in ids[:30]:
+        state = c.change(state["revision"], {identifier: "reject"})
+    assert len(c.store.path.read_bytes()) < 3 * baseline
+    assert all(set(entry) == {"delta"} for entry in state["history"])
+    state = c.undo(state["revision"])
+    assert state["decisions"][ids[29]]["choice"] == "keep"
+    for _ in range(30):
+        state = c.undo(state["revision"])
+    assert state["decisions"] == {}
+    with pytest.raises(ReviewError, match="Nothing to undo"):
+        c.undo(state["revision"])
+
+
+def test_earlier_snapshot_history_still_undoes(tmp_path):
+    c, _ = collection(tmp_path)
+    a, _ = list(c.entries)
+    state = c.change(0, {a: "keep"})
+    state["history"] = [dict(decisions={}, preferences=[], alternatives={})]
+    c.store.path.write_text(json.dumps(state))
+    assert c.undo(1)["decisions"] == {}
+
+
+def test_reversed_preference_replaces_the_earlier_verdict(tmp_path):
+    c, _ = collection(tmp_path)
+    a, b = list(c.entries)
+    c.change(0, {}, preference=[a, b])
+    state = c.change(1, {}, preference=[b, a])
+    assert [(p["winner"], p["loser"]) for p in state["preferences"]] == [(b, a)]
+
+
+def test_lazy_open_hashes_only_the_photos_a_decision_relies_on(tmp_path, monkeypatch):
+    collection(tmp_path)
+    hashed = []
+    real = fingerprint
+    monkeypatch.setattr("fotosort.review_data.fingerprint", lambda path: hashed.append(path.name) or real(path))
+    lazy = Collection(tmp_path, verify_sources=False)
+    assert hashed == ["fotosort_report.csv"]
+    lazy.change(0, {list(lazy.entries)[1]: "keep"})
+    assert hashed == ["fotosort_report.csv", "b.jpg"]
+    (tmp_path / "a.jpg").write_bytes(b"new content")
+    with pytest.raises(Conflict):
+        lazy.change(1, {list(lazy.entries)[0]: "keep"})
+
+
+def test_import_is_recorded_as_an_import_not_an_explicit_review(tmp_path):
+    c, _ = collection(tmp_path)
+    assert main([str(tmp_path), "import"]) == 0
+    assert {d["origin"] for d in c.store.load()["decisions"].values()} == {"csv import"}
+
+
+def test_forced_include_is_not_recorded_as_an_automatic_pick(tmp_path):
+    _, photos = collection(tmp_path)
+    forced = photos[1]
+    forced.auto_selected, forced.auto_decision = forced.selected, forced.decision
+    forced.selected, forced.decision = True, "Forced by --include"
+    apply_manual_decisions(photos, tmp_path)
+    write_report(photos, tmp_path / "fotosort_report.csv", tmp_path)
+    row = Collection(tmp_path).rows[1]
+    assert (row["selected"], row["auto_selected"], row["auto_decision"]) == ("1", "0", "Group budget filled")
+
+
+def test_written_reports_follow_the_umask_not_the_temporary_file_mode(tmp_path):
+    c, _ = collection(tmp_path)
+    umask = os.umask(0)
+    os.umask(umask)
+    assert c.report.stat().st_mode & 0o777 == 0o666 & ~umask
+    c.report.chmod(0o640)
+    c.export("reviewed.csv", 0)
+    write_report([], c.report, tmp_path)
+    assert c.report.stat().st_mode & 0o777 == 0o640
+
+
+def test_invalid_review_record_stops_the_run_before_analysis(tmp_path, monkeypatch, capsys):
+    from fotosort import cli
+
+    Image.new("RGB", (24, 16)).save(tmp_path / "a.jpg")
+    (tmp_path / ".fotosort_review.json").write_text("{}")
+    monkeypatch.setattr(cli, "compute_features", lambda *args: pytest.fail("analysis started"))
+    assert cli.main([str(tmp_path)]) == 2
+    assert "Invalid or unsupported review file" in capsys.readouterr().err
