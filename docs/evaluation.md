@@ -92,7 +92,10 @@ provenance, legacy `selected` is treated as the supplied baseline; the summary
 flags this distinction. `--include` picks are human choices too: current reports
 record what automation chose for them in `auto_selected`. Reports that recorded
 a forced pick as automatic cannot say what automation chose, so that frame's
-selection is unknown and counted in `coverage.human_forced`.
+selection is unknown and counted in `coverage.human_forced`. Regenerate reports
+from intermediate preview revisions that cleared rejection before selection:
+their `auto_selected` values can already reflect `--include`, and the original
+automatic result cannot be reconstructed from those CSVs.
 
 Optional photo `sha256` records the original's content. Optional shoot `root`
 enables missing-file/content checks using those relative paths. Without it,
@@ -206,3 +209,8 @@ All 1,117 final judgments are marked incomplete in this replay; final recall
 is `null`. No review duration or token usage is invented. These numbers verify
 the harness against the archived memberships, not an improvement in general
 photographic accuracy.
+
+Evaluation output cannot use the reserved `.fotosort_review.json` filename, even
+before a review store exists or through a symbolic-link alias. This applies to
+feedback manifests as well as run/comparison summaries. Missing declared inputs
+are also protected from being created as summary files.

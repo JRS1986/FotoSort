@@ -415,3 +415,49 @@ def test_undecodable_report_is_an_evaluation_error(fixture):
     with pytest.raises(SystemExit) as exc:
         main(["evaluate", "run", str(save(fixture))])
     assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("command", ["run", "compare", "feedback"])
+@pytest.mark.parametrize("name", [".fotosort_review.json", ".FOTOSORT_REVIEW.JSON"])
+def test_evaluation_never_creates_a_summary_or_manifest_at_the_review_store(fixture, command, name):
+    path, doc, _ = fixture
+    root = path.parent
+    for photo in doc["shoots"][0]["photos"]:
+        (root / photo["file"]).write_bytes(b"synthetic original")
+    # Deliberately omit root from the manifest: the reserved filename is never an evaluation output.
+    destination = root / name
+    assert not destination.exists()
+    if command == "feedback":
+        argv = ["evaluate", "feedback", str(root), "--report", "baseline.csv"]
+    else:
+        argv = ["evaluate", command, str(path)]
+    with pytest.raises(SystemExit) as exc:
+        main([*argv, "--output", str(destination)])
+    assert exc.value.code == 2
+    assert not destination.exists() and not (root / ".fotosort_review.json").exists()
+    assert (root / "baseline.csv").is_file()
+
+
+def test_summary_cannot_create_a_missing_declared_source(fixture):
+    path, doc, rows = fixture
+    root = path.parent
+    photo = doc["shoots"][0]["photos"][0]
+    photo["file"] = "missing.json"
+    doc["shoots"][0]["root"] = "."
+    doc["shoots"][0]["runs"]["baseline"].pop("report_sha256")
+    rows[0]["file"] = rows[0]["relative_file"] = photo["file"]
+    write_rows(root / "baseline.csv", list(rows[0]), rows)
+    save(fixture)
+    with pytest.raises(SystemExit) as exc:
+        main(["evaluate", "run", str(path), "--output", str(root / "missing.json")])
+    assert exc.value.code == 2 and not (root / "missing.json").exists()
+
+
+def test_dangling_alias_cannot_create_a_review_record(fixture):
+    path, _, _ = fixture
+    target = path.parent / ".fotosort_review.json"
+    alias = path.parent / "summary.json"
+    alias.symlink_to(target)
+    with pytest.raises(SystemExit) as exc:
+        main(["evaluate", "run", str(path), "--output", str(alias)])
+    assert exc.value.code == 2 and alias.is_symlink() and not target.exists()

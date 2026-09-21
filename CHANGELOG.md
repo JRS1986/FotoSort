@@ -30,6 +30,8 @@ All notable changes to FotoSort are documented here. The format follows
   left the collection, and validate the review record before analysis starts.
 
 ### Fixed
+- Reserve the review-store filename for evaluation outputs even when no store
+  exists, and protect missing inputs from being replaced by summary files.
 - Keep changed-source errors visible after reviewer reload, and reverify photos
   restored after being missing even if their modification time is unchanged.
 - Verify unselected report photos before RAW culling, refresh manual choices

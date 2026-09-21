@@ -378,6 +378,7 @@ def evaluate(path: Path, run_name: str, baseline: str | None = None):
 
 def export_feedback(folder, report, output, split, review_seconds=None, manual_replacements=None,
                     include_imported=False):
+    refuse_review_record(output)
     collection = Collection(folder, report)
     with collection.store.locked():
         state = collection.store.load()
@@ -411,11 +412,18 @@ def export_feedback(folder, report, output, split, review_seconds=None, manual_r
     return result, len(state["decisions"]) - len(decisions)
 
 
+def refuse_review_record(output: Path) -> None:
+    # Reserve the name even before the store exists, including aliases and case-insensitive volumes.
+    if output.resolve().name.casefold() == STORE_NAME.casefold():
+        raise ReviewError("Evaluation output must not overwrite or create a review record")
+
+
 def refuse_overwrite(output: Path, manifest_path: Path, manifest: dict) -> None:
     """Checked before evaluating. samefile also catches another spelling of the same file, such as
     different letter case on a case-insensitive volume, a symlink, or a hard link."""
     if output.suffix.lower() != ".json":
         raise ReviewError("Summary output must be a JSON file")
+    refuse_review_record(output)
     base = manifest_path.resolve().parent
     inputs = {manifest_path.resolve()}
     inputs.update(local_path(base, r["report"]) for s in manifest["shoots"] for r in s["runs"].values())
@@ -424,7 +432,8 @@ def refuse_overwrite(output: Path, manifest_path: Path, manifest: dict) -> None:
             root = local_path(base, shoot["root"])
             inputs.update(inside(root, p["file"]).resolve() for p in shoot["photos"])
             inputs.update({root / STORE_NAME, root / ".fotosort_review.lock"})
-    if output.exists() and any(path.exists() and output.samefile(path) for path in inputs):
+    if (output.resolve() in inputs
+            or (output.exists() and any(path.exists() and output.samefile(path) for path in inputs))):
         raise ReviewError("Summary output must not overwrite its manifest, reports, photos, or review record")
 
 
