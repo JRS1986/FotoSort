@@ -26,6 +26,8 @@ jobs:
         run: pip install pillow numpy tqdm openai pytest ruff
       - name: Lint
         run: ruff check fotosort tests
+      - name: Check reviewer script syntax
+        run: node --check fotosort/static/review.js
       - name: Test
         run: pytest -q
       - name: Build and validate distributions

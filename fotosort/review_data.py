@@ -369,7 +369,7 @@ class Collection:
             auto = row.get("auto_selected", row["selected"]) == "1"
             # A legacy CSV's selected column remains its starting recommendation.
             choice = decision["choice"] if decision else ""
-            stale = entry["relative_file"] in annotated_paths and decision is None
+            stale = entry["relative_file"] in annotated_paths and entry["id"] not in state["decisions"]
             result.append(dict(id=entry["id"], relative_file=entry["relative_file"], sha256=entry["sha256"],
                                status=entry["status"], source_note=entry["source_note"], auto_selected=auto,
                                selected=(choice == "keep") if choice else auto, manual_decision=choice,

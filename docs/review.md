@@ -12,19 +12,24 @@ no analysis or judging. Filter by day, subject, scene, moment, or judge exposure
 all report frames are available, including excluded alternatives. Pin a reference
 and browse nearby frames in capture order. Fit and 100% views synchronize zoom
 and pan; drag either native-resolution image, or focus it and use arrow keys.
-Full RAW decoding is deferred until you request native detail.
+Full RAW decoding is deferred until you request native detail; at 100% a JPEG
+source is shown as the file itself, without re-encoding.
 
 Keep (`K`), reject (`X`), clear (`C`), pin (`P`), and undo (`Z`) have keyboard
 shortcuts. Arrow keys browse frames outside a zoomed image. **Use candidate
 instead** atomically rejects the reference, keeps the candidate, and records a
 pairwise preference. **Prefer candidate** and **Both acceptable** record feedback
-without changing picks. Add a review note before taking an action.
+without changing picks. Add a review note before taking an action. The note
+field always shows the saved note of the candidate frame, including when a
+filter or a saved choice moves the selection to another frame.
 
 **Export reviewed CSV** writes `fotosort_reviewed.csv` in the collection. It can
-then be applied using the command below. A stale session displays a conflict;
-use **Reload** to refresh before editing again. Changed/missing sources remain
-visible, and selected unavailable sources block export instead of silently
-dropping picks. Stop the server with Ctrl+C.
+then be applied using the command below. An export never replaces the report
+being reviewed: reviewing `fotosort_reviewed.csv` itself exports to
+`fotosort_reviewed_2.csv`. A stale session displays a conflict; use **Reload**
+to refresh before editing again. Changed/missing sources remain visible, and
+selected unavailable sources are exported with their `review_status` instead of
+being silently dropped. Stop the server with Ctrl+C.
 
 The server binds only to `127.0.0.1` on an automatically selected port. `--port`
 chooses a port; `--no-browser` prints the URL without launching a browser. The
@@ -32,8 +37,13 @@ printed URL carries a random session token: keep it local. Requests check the
 host, origin, and token; image paths are restricted to report entries inside
 the collection. The UI has no remote scripts, fonts, or image uploads.
 Thumbnails are loaded lazily, with 48 frames per page and a 32 MiB image cache.
-Decoding is serialized, so peak image memory depends on one source's resolution,
-not the number of simultaneous browser requests.
+Opening the reviewer reads no photo when the report records content hashes: a
+photo is hashed when it is first shown or decided, and read again only after its
+size or modification time changed. Connections are accepted concurrently, so an
+idle or slow connection cannot stall the page, while requests are still handled
+one at a time: peak image memory depends on one source's resolution, not the
+number of simultaneous browser requests. Error messages sent to the browser
+never contain absolute paths.
 
 ## Command-line decisions
 

@@ -1,5 +1,6 @@
 import io
 import json
+import socket
 import threading
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -154,13 +155,92 @@ def test_full_raw_uses_shared_decoder_and_orients_native_pixels(server, monkeypa
     assert calls == [str(raw)]
 
 
-def test_reload_marks_missing_manual_choice_stale_and_allows_clear(server):
+def test_reload_keeps_missing_manual_choice_missing_and_allows_clear(server):
     state, _ = request(server, "/api/state")
     identifier = state["photos"][0]["id"]
     server.collection.change(0, {identifier: "keep"})
     server.collection.entries[identifier]["path"].unlink()
     updated, _ = request(server, "/api/state")
     assert updated["photos"][0]["status"] == "missing"
-    assert updated["photos"][0]["review_status"] == "stale decision"
+    # The exported status stays "missing", as in `fotosort decisions`; `clearable` enables the Clear button.
+    assert updated["photos"][0]["review_status"] == "missing"
+    assert updated["photos"][0]["clearable"] and not updated["photos"][1]["clearable"]
     server.collection.change(1, {identifier: "clear"})
     assert not server.collection.store.load()["decisions"]
+
+
+def test_idle_connection_does_not_stall_other_requests(server):
+    with socket.create_connection(("127.0.0.1", server.server_port)) as idle:
+        idle.settimeout(5)
+        assert len(request(server, "/api/state")[0]["photos"]) == 3
+        # A body shorter than its Content-Length must not stall anyone else either.
+        idle.sendall(f"POST /api/change HTTP/1.1\r\nHost: 127.0.0.1:{server.server_port}\r\n"
+                     f"X-FotoSort-Token: {server.token}\r\nContent-Type: application/json\r\n"
+                     "Content-Length: 500\r\n\r\n{".encode())
+        assert len(request(server, "/api/state")[0]["photos"]) == 3
+
+
+def test_default_export_never_replaces_the_report_being_reviewed(tmp_path, server):
+    first, _ = request(server, "/api/state")
+    body = dict(revision=first["revision"], report_version=first["report_version"])
+    assert request(server, "/api/export", body)[0]["output"] == "fotosort_reviewed.csv"
+    again = ReviewServer(Collection(tmp_path, "fotosort_reviewed.csv", verify_sources=False))
+    try:
+        assert again.collection.export("fotosort_reviewed_2.csv", 0).name == "fotosort_reviewed_2.csv"
+        from fotosort.review import default_export
+        assert default_export(again.collection) == "fotosort_reviewed_2.csv"
+    finally:
+        again.server_close()
+    with pytest.raises(HTTPError) as exc:
+        request(server, "/api/export", {**body, "output": "fotosort_report.csv"})
+    assert exc.value.code == 400 and b"overwrite the report" in exc.value.read()
+
+
+def test_decoder_failures_answer_without_paths(server, monkeypatch):
+    state, _ = request(server, "/api/state")
+    identifier = state["photos"][0]["id"]
+
+    class LibRawError(Exception):
+        pass
+
+    def broken(path, **kwargs):
+        raise LibRawError(f"unsupported file {path}")
+
+    monkeypatch.setattr("fotosort.quality.load_small", broken)
+    with pytest.raises(HTTPError) as exc:
+        request(server, f"/image/{identifier}?size=thumb")
+    body = exc.value.read()
+    assert exc.value.code == 500 and str(server.collection.root).encode() not in body
+    server.collection.entries[identifier]["source"] = server.collection.root / "gone.jpg"
+    with pytest.raises(HTTPError) as exc:
+        request(server, f"/image/{identifier}?size=preview")
+    assert exc.value.code == 400 and str(server.collection.root).encode() not in exc.value.read()
+    with pytest.raises(HTTPError) as exc:
+        request(server, "/api/change", "[" * 60000)
+    assert exc.value.code == 400
+
+
+def test_images_are_hashed_once_and_full_jpegs_are_served_as_files(tmp_path, monkeypatch):
+    real = __import__("fotosort.review_data", fromlist=["fingerprint"]).fingerprint
+    rows = []
+    for i in range(2):
+        Image.new("RGB", (400, 300), (i * 90, 120, 80)).save(tmp_path / f"{i}.jpg")
+        rows.append(dict(file=f"{i}.jpg", relative_file=f"{i}.jpg", selected="0", shortlisted="0",
+                         photo_sha256=real(tmp_path / f"{i}.jpg")))  # as current analysis reports record it
+    write_rows(tmp_path / "fotosort_report.csv", list(rows[0]), rows)
+    hashed = []
+    for module in ("fotosort.review_data", "fotosort.review"):
+        monkeypatch.setattr(f"{module}.fingerprint", lambda path: hashed.append(path.name) or real(path))
+    app = ReviewServer(Collection(tmp_path, verify_sources=False))
+    try:
+        identifier = app.snapshot()["photos"][0]["id"]
+        assert hashed == ["fotosort_report.csv"]  # opening the page reads no photo
+        for _ in range(3):
+            app.image(identifier, "thumb")
+            app.snapshot()
+        assert hashed == ["fotosort_report.csv", "0.jpg"]
+        assert app.image(identifier, "full") == (tmp_path / "0.jpg").read_bytes()
+        (tmp_path / "0.jpg").write_bytes(b"changed")
+        assert app.snapshot()["photos"][0]["status"] == "changed"
+    finally:
+        app.server_close()
