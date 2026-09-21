@@ -66,6 +66,7 @@ class ReviewServer(ThreadingHTTPServer):
                     entry["stamp"] = current
             except (OSError, ReviewError):
                 entry["status"] = "missing"
+                entry["stamp"] = None  # a returning file must be verified again, even with the old mtime
         state = self.collection.store.load()
         return dict(collection=self.collection.root.name, revision=state["revision"],
                     report_version=self.collection.report_digest, photos=self.collection.view(state),

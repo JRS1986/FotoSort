@@ -27,7 +27,8 @@ filter or a saved choice moves the selection to another frame.
 then be applied using the command below. An export never replaces the report
 being reviewed: reviewing `fotosort_reviewed.csv` itself exports to
 `fotosort_reviewed_2.csv`. A stale session displays a conflict; use **Reload**
-to refresh before editing again. Changed/missing sources remain visible, and
+to refresh before editing again. A failed image verification updates the source status, so **Reload** and the
+**Needs attention** filter expose changed files. Changed/missing sources remain visible, and
 selected unavailable sources are exported with their `review_status` instead of
 being silently dropped. Stop the server with Ctrl+C.
 

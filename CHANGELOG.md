@@ -23,6 +23,8 @@ All notable changes to FotoSort are documented here. The format follows
   left the collection, and validate the review record before analysis starts.
 
 ### Fixed
+- Keep changed-source errors visible after reviewer reload, and reverify photos
+  restored after being missing even if their modification time is unchanged.
 - Verify unselected report photos before RAW culling, refresh manual choices
   after analysis, and stop report/export writes if a later review edit conflicts.
 - Apply forced includes after automatic selection and expose changed or missing
