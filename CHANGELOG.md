@@ -8,7 +8,8 @@ All notable changes to FotoSort are documented here. The format follows
 
 ### Documentation
 - Add an issue-first contribution workflow, bug/feature and pull-request
-  templates, and repository instructions for agent-assisted development.
+  templates, and repository instructions for agent-assisted development
+  (`AGENTS.md`, imported by `CLAUDE.md` and shipped in the source distribution).
 - Link the prioritized project roadmap and correct the CLI documentation
   location in the contribution guide.
 - Rework the README around installation, reviewing selections and explicit file

@@ -1,33 +1,23 @@
 # Working on FotoSort
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. The project owner
-requires development through GitHub issues and pull requests.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes and follow its
+pull-request process in full: issue first, focused branch, linked PR,
+validation, changelog, and maintainer review. The project owner requires
+development through GitHub issues and pull requests. The points below add
+what is specific to agent sessions; CONTRIBUTING.md remains the single source
+for the shared rules.
 
-## Issue and branch workflow
+## Agent sessions
 
-- Check existing issues and PRs before starting work. Create or reuse an issue
-  that states the problem, scope, acceptance criteria, and validation approach.
-- Work on a focused `codex/<topic>` branch from the current default branch.
-  Keep unrelated work separate and preserve existing user changes.
-- Deliver changes through a PR linked to the issue. Use `Closes #N` only when
-  the PR satisfies the whole issue; use `Refs #N` for an implementation slice.
-- Keep PRs open for maintainer review. Merge only when the user has authorized
-  it and the required checks pass. Do not push changes directly to `main`.
-- Close issues when their acceptance criteria have been met and the relevant
-  PRs have merged. Track remaining work explicitly rather than declaring it done.
-
-## Validation and review
-
-- Run `ruff check fotosort tests` and `pytest` for changes, and report the actual
-  results. CI also validates distributions and the installed CLI on Python
-  3.11 and 3.12; resolve relevant failures before marking a PR ready.
-- Add focused regression tests for behavior changes. Documentation and template
-  changes need content/link checks, not tests that merely repeat their text.
-- Inspect the final diff. Keep PR descriptions focused on the problem, resulting
-  behavior, linked issue, validation, and material limitations.
-- Add an entry under `Unreleased` in `CHANGELOG.md`. Document new CLI options
-  and their actual defaults in `docs/cli-reference.md`, with README examples
-  when they help explain the workflow.
+- Name branches `codex/<topic>` and create them from the current default
+  branch. Preserve existing user changes in the working tree.
+- Merge only when the user has authorized it in the current session and the
+  required checks pass. Do not push changes directly to `main`.
+- Run `ruff check fotosort tests` and `pytest`, and report the actual results,
+  including checks that could not run. Resolve relevant CI failures before
+  marking a PR ready.
+- Track remaining work explicitly in the issue or PR rather than declaring it
+  done.
 
 ## Project constraints
 
@@ -38,5 +28,5 @@ requires development through GitHub issues and pull requests.
   Logic tests do not establish photographic accuracy. Keep private photos out
   of Git and sanitize private paths in published reports.
 
-The current proposed roadmap is tracked in
+The roadmap is tracked in
 [issue #6](https://github.com/JRS1986/FotoSort/issues/6).

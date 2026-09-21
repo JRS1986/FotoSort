@@ -55,7 +55,8 @@ photos to the repository.
 - Start from an existing issue, or open one using the bug/feature templates.
   Define the problem, scope, acceptance criteria, dependencies and validation
   before implementation. Search existing issues and PRs to avoid duplicates.
-- Use a focused `codex/<topic>` branch from the current default branch. Keep
+- Use a focused topic branch (for example `fix/<topic>` or `docs/<topic>`)
+  from the current default branch, in your fork or in this repository. Keep
   unrelated changes separate and preserve any existing local work.
 - One topic per pull request, with a short description of what changed and
   why. Reference the report rows or measurements that motivated it.
@@ -76,7 +77,8 @@ photos to the repository.
   passing checks. Do not push changes directly to `main`. Close issues only
   when their acceptance criteria are satisfied and the relevant PRs have merged.
 
-Agent-assisted work follows the same process; see [AGENTS.md](AGENTS.md).
+Agent-assisted work follows the same process; [AGENTS.md](AGENTS.md) adds the
+agent-specific rules, including the `codex/<topic>` branch prefix.
 
 ## Ideas that are welcome
 
@@ -87,10 +89,9 @@ exist; see `CHANGELOG.md` for implemented changes and the issue tracker for
 current proposals.
 
 The [project roadmap](https://github.com/JRS1986/FotoSort/issues/6) tracks the
-planned improvements and their dependencies. Personal-preference learning and
-resumability are the current priorities, supported by persistent manual
-decisions, a local reviewer, and photographic evaluation. Each improvement has
-its own scoped issue; future proposals should follow the same process.
+planned improvements, their current priorities and their dependencies. Each
+improvement has its own scoped issue; future proposals should follow the same
+process.
 
 ## License
 
