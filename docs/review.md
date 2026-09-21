@@ -67,10 +67,15 @@ Use complete paths relative to the photo folder, including subfolders. Add
 `--report award_roll_report.csv` after the folder to review a portfolio. Exports
 default to `fotosort_reviewed.csv`; `export --output other.csv` changes this.
 
-A normal analysis rerun applies saved choices after automatic selection. Reports
+A normal analysis rerun reloads saved choices after automatic selection, including
+edits made while features and judge results were computed. If review changes
+again while the run is finishing, it stops before replacing the report or
+exporting photos; rerun to apply the latest choices. Reports
 retain `auto_selected` and `auto_decision` alongside effective `selected`,
 `manual_decision`, `manual_reason`, `review_status`, and `review_revision`.
 Explicit choices take precedence over automated budgets and forced includes.
+`--include` changes eligibility only after automatic selection, preserving the
+automatic rejection reason even for a manually included blurry frame.
 For award-roll, a human addition has no automatic award rank or exceptional-moment
 claim. An award plan remains a plan and does not apply human choices.
 
@@ -132,3 +137,7 @@ path, content hash, choice, note, timestamp, and their origin (`explicit review`
 or `csv import`).
 Treat this as local data: notes and relative filenames can be personal. The
 evaluation harness can use anonymous IDs for shareable summaries.
+
+Applying a report checks the content hashes of selected photos. With `--raw-cull`,
+unselected report photos are checked too, before writing cull lists or moving RAWs.
+A stale rejection must not relocate a different photo that now occupies that path.
