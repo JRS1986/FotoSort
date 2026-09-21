@@ -53,6 +53,10 @@ For choices that survive analysis reruns, use
 [`fotosort decisions`](docs/review.md). It preserves the automated recommendation
 separately and exports reviewed selections for the same `--apply-report` workflow.
 
+Run `fotosort review /path/to/photos` to compare picks with excluded burst
+neighbours in a local browser. Keep/reject shortcuts, synchronized detail views,
+undo, and reviewed CSV export use the same [persistent decisions](docs/review.md).
+
 You can also extract the release's source archive and run the installation
 commands from that directory, or install its wheel with `pip install /path/to/file.whl`.
 For judge support, install `pip install ".[judge]"` from the source directory.

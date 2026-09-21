@@ -1,5 +1,42 @@
 # Persistent review decisions
 
+## Visual reviewer
+
+```bash
+fotosort review /path/to/photos
+fotosort review /path/to/photos --report award_roll_report.csv --no-browser
+```
+
+The command opens a local browser session for an existing report. It performs
+no analysis or judging. Filter by day, subject, scene, moment, or judge exposure;
+all report frames are available, including excluded alternatives. Pin a reference
+and browse nearby frames in capture order. Fit and 100% views synchronize zoom
+and pan; drag either native-resolution image, or focus it and use arrow keys.
+Full RAW decoding is deferred until you request native detail.
+
+Keep (`K`), reject (`X`), clear (`C`), pin (`P`), and undo (`Z`) have keyboard
+shortcuts. Arrow keys browse frames outside a zoomed image. **Use candidate
+instead** atomically rejects the reference, keeps the candidate, and records a
+pairwise preference. **Prefer candidate** and **Both acceptable** record feedback
+without changing picks. Add a review note before taking an action.
+
+**Export reviewed CSV** writes `fotosort_reviewed.csv` in the collection. It can
+then be applied using the command below. A stale session displays a conflict;
+use **Reload** to refresh before editing again. Changed/missing sources remain
+visible, and selected unavailable sources block export instead of silently
+dropping picks. Stop the server with Ctrl+C.
+
+The server binds only to `127.0.0.1` on an automatically selected port. `--port`
+chooses a port; `--no-browser` prints the URL without launching a browser. The
+printed URL carries a random session token: keep it local. Requests check the
+host, origin, and token; image paths are restricted to report entries inside
+the collection. The UI has no remote scripts, fonts, or image uploads.
+Thumbnails are loaded lazily, with 48 frames per page and a 32 MiB image cache.
+Decoding is serialized, so peak image memory depends on one source's resolution,
+not the number of simultaneous browser requests.
+
+## Command-line decisions
+
 FotoSort stores explicit human choices separately from its automated report in
 `.fotosort_review.json` in the photo folder. The format is versioned; no image
 models or judge requests are needed to edit it.

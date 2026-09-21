@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="review-token" content="__TOKEN__">
+  <title>FotoSort · Review</title>
+  <link rel="stylesheet" href="/assets/review.css?token=__TOKEN__">
+  <script src="/assets/review.js?token=__TOKEN__" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="#main"><span class="mark">F</span> FotoSort <span class="muted">/ Review</span></a>
+    <div class="header-actions"><span class="local"><span class="dot"></span> Local session</span><button id="reload">Reload</button><button id="export" class="primary">Export reviewed CSV ↗</button></div>
+  </header>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Collection filters">
+      <p class="eyebrow">YOUR COLLECTION</p><h1 id="collection">Loading…</h1><p class="subtle">Compare the moment.<br>Keep your favourite.</p>
+      <div class="stats"><div><strong id="kept">—</strong><span>kept</span></div><div><strong id="manual">—</strong><span>manual choices</span></div></div>
+      <h2>Browse</h2>
+      <label>Day<select id="day"><option value="">All days</option></select></label>
+      <label>Subject<select id="subject"><option value="">All subjects</option></select></label>
+      <label>Scene<select id="scene"><option value="">All scenes</option></select></label>
+      <label>Moment<select id="moment"><option value="">All moments</option></select></label>
+      <label>Show<select id="show"><option value="all">All frames</option><option value="kept">Kept frames</option><option value="unseen">Never shown to judge</option><option value="manual">Manual choices</option><option value="attention">Needs attention</option></select></label>
+      <button id="reset-filters" class="quiet">Reset filters</button>
+      <div class="shortcut-card"><h2>Keyboard shortcuts</h2><p><kbd>←</kbd> <kbd>→</kbd> Previous / next</p><p><kbd>K</kbd> Keep <kbd>X</kbd> Reject</p><p><kbd>C</kbd> Clear <kbd>P</kbd> Pin reference</p><p><kbd>Z</kbd> Undo last edit</p></div>
+      <p class="footnote">Your choices are saved locally.<br>Original photos stay untouched.</p>
+    </aside>
+    <main id="main">
+      <div class="section-heading"><div><p class="eyebrow">SIDE-BY-SIDE REVIEW</p><h2>Choose your keeper</h2></div><div class="zoom-tools" aria-label="Synchronized image zoom"><button id="fit" class="active">Fit</button><button id="native">100%</button><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-in" aria-label="Zoom in">+</button></div></div>
+      <div id="notice" class="notice" role="status" aria-live="polite">Loading the report…</div>
+      <section class="comparison" aria-label="Photo comparison">
+        <article class="photo-panel"><div class="panel-heading"><span class="panel-kicker">REFERENCE</span><span id="reference-badge" class="badge"></span></div><div id="reference-viewport" class="viewport" tabindex="0" aria-label="Reference photo. Drag to pan both images."><img id="reference-image" alt=""><span class="image-error" id="reference-error"></span></div><div class="photo-caption"><strong id="reference-name">Choose a reference</strong><p id="reference-meta"></p><p id="reference-reason" class="reason"></p></div></article>
+        <article class="photo-panel candidate"><div class="panel-heading"><span class="panel-kicker">CANDIDATE</span><span id="candidate-badge" class="badge"></span></div><div id="candidate-viewport" class="viewport" tabindex="0" aria-label="Candidate photo. Drag to pan both images."><img id="candidate-image" alt=""><span class="image-error" id="candidate-error"></span></div><div class="photo-caption"><strong id="candidate-name">Choose a candidate</strong><p id="candidate-meta"></p><p id="candidate-reason" class="reason"></p></div></article>
+      </section>
+      <div class="decision-bar"><div class="choice-actions"><button id="keep" class="keep">✓ Keep <kbd>K</kbd></button><button id="reject">× Reject <kbd>X</kbd></button><button id="clear">Clear override</button><button id="pin">Pin as reference</button></div><button id="replace" class="primary">Use candidate instead</button></div>
+      <div class="feedback-bar"><label class="note-label">Review note<input id="note" type="text" maxlength="4000" placeholder="What makes this frame stand out? (optional)"></label><button id="prefer">Prefer candidate</button><button id="alternatives">Both acceptable</button><button id="undo">↶ Undo</button></div>
+      <div class="filmstrip-heading"><div><h2>Explore the sequence <span id="count" class="count"></span></h2><p>All matching frames, including those excluded before judging.</p></div><div class="pagination"><button id="previous" aria-label="Previous page">←</button><span id="page"></span><button id="next" aria-label="Next page">→</button></div></div>
+      <div id="filmstrip" class="filmstrip" aria-label="Photos in the current filters"></div>
+      <div id="empty" class="empty" hidden>No frames match these filters.</div>
+    </main>
+  </div>
+</body>
+</html>

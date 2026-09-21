@@ -39,4 +39,7 @@ jobs:
           cd "$RUNNER_TEMP"
           fotosort --help
           fotosort enhance --help
+          fotosort decisions --help
+          fotosort review --help
+          python -c "from importlib.resources import files; assert files('fotosort').joinpath('static/review.html').is_file()"
           python -m fotosort --help
