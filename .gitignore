@@ -27,6 +27,7 @@ fotosort_report.csv
 .fotosort_review.json
 .fotosort_review.lock
 fotosort_reviewed.csv
+fotosort_evaluation*.json
 *.pt
 *.pth
 *.egg-info/

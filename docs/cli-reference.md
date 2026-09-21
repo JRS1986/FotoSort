@@ -108,3 +108,22 @@ This writes JPEGs to an `Enhanced/` subfolder by default; `--out` chooses
 another destination. Existing enhanced files with the same name can be
 replaced on subsequent runs. `--no-clip` uses image statistics for style
 detection, and `--style` chooses a recipe explicitly.
+
+
+## Evaluation harness
+
+`fotosort evaluate` runs offline on saved CSV reports. See the [format and metric definitions](evaluation.md).
+
+| Command / option | Default | Purpose |
+|---|---|---|
+| `feedback FOLDER` | — | Export explicit review feedback to a private manifest |
+| `feedback --report` | `fotosort_report.csv` | Report inside the collection |
+| `feedback --output` | Required | New private JSON manifest; existing files are refused |
+| `feedback --split` | `diagnostic` | `development`, `heldout`, or `diagnostic` |
+| `feedback --review-seconds` | Unknown | Explicit measured baseline review time |
+| `feedback --manual-replacements` | Unknown | Explicit observed baseline replacements |
+| `feedback --include-imported` | off | Also export decisions recorded by `decisions import` as favourites and rejects |
+| `run MANIFEST --run` | `baseline` | Evaluate a named saved run in every shoot |
+| `compare MANIFEST --run` | `candidate` | Candidate run to compare |
+| `compare --baseline` | `baseline` | Frozen baseline with the same eligible inputs and budget |
+| `run/compare --output` | stdout | Shareable JSON summary; cannot overwrite inputs |
