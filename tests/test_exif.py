@@ -3,9 +3,10 @@ import io
 import struct
 
 import pytest
-from PIL import Image
+from PIL import ExifTags, Image
 
-from fotosort.enhance import enhance_file, save_like_original
+from fotosort import cli
+from fotosort.enhance import enhance_file, main, save_like_original
 from fotosort.exif import patch_exif_geometry
 
 
@@ -28,6 +29,8 @@ def _offset_exif(order="<", scalar_type=3, *, orientation=True):
             if track and tag in {256, 257, 274, 40962, 40963}:
                 locations[tag] = (6 + start + 8, 2 if kind == 3 else 4)
         struct.pack_into(order + "I", tiff, offset + 2 + len(entries) * 12, next_ifd)
+        if track and next_ifd:
+            locations["next_ifd"] = (6 + offset + 2 + len(entries) * 12, 4)
 
     entries = [(256, scalar_type, 1, 80), (257, scalar_type, 1, 40),
                (271, 2, 12, 272), (0x8769, 4, 1, 160), (65000, 7, 8, 560)]
@@ -52,7 +55,8 @@ def _offset_exif(order="<", scalar_type=3, *, orientation=True):
 
 def _expected(raw, locations, order, size):
     expected = bytearray(raw)
-    for tag, value in ((274, 1), (256, size[0]), (257, size[1]), (40962, size[0]), (40963, size[1])):
+    fields = ((274, 1), (256, size[0]), (257, size[1]), (40962, size[0]), (40963, size[1]), ("next_ifd", 0))
+    for tag, value in fields:
         if tag in locations:
             start, length = locations[tag]
             expected[start:start + length] = value.to_bytes(length, "little" if order == "<" else "big")
@@ -187,3 +191,62 @@ def test_scalar_overflow_is_rejected_without_rebuilding_exif():
 def test_truncated_header_is_rejected():
     with pytest.raises(ValueError, match="header"):
         patch_exif_geometry(b"Exif\0\0II", (30, 60))
+
+
+def test_stale_thumbnail_is_unlinked_without_moving_its_bytes():
+    raw, _ = _offset_exif()
+    result = patch_exif_geometry(raw, (30, 60))
+    before, after = Image.Exif(), Image.Exif()
+    before.load(raw)
+    after.load(result)
+    # Viewers would show the uncorrected thumbnail with the new upright orientation.
+    assert before.get_ifd(ExifTags.IFD.IFD1) and not after.get_ifd(ExifTags.IFD.IFD1)
+    assert result[6 + 640:] == raw[6 + 640:]
+
+
+def test_exif_pointer_with_tiff_ifd_type_is_patched():
+    raw, locations = _offset_exif()
+    data = bytearray(raw)
+    struct.pack_into("<H", data, 6 + 48 + 2 + 4 * 12 + 2, 13)  # 0x8769 typed as IFD
+    result = patch_exif_geometry(bytes(data), (30, 60))
+    start, length = locations[40962]
+    assert int.from_bytes(result[start:start + length], "little") == 30
+
+
+def _unsafe_photo(path):
+    raw, _ = _offset_exif()
+    data = bytearray(raw)
+    struct.pack_into("<H", data, 6 + 48 + 2 + 4 * 12 + 2, 3)  # invalid ExifIFD pointer type
+    with Image.new("RGB", (80, 40), "blue") as image:
+        image.save(path, exif=bytes(data))
+    return path.read_bytes()
+
+
+def test_unsafe_exif_error_names_the_photo_and_workaround(tmp_path, rightwayup_stub):
+    src, dst = tmp_path / "in.jpg", tmp_path / "out.jpg"
+    _unsafe_photo(src)
+    with pytest.raises(SystemExit, match=r"in\.jpg: Cannot safely .*--no-orientation"):
+        enhance_file(src, dst, "general", 1, orienter=rightwayup_stub("max", "strict"))
+    assert not dst.exists()
+
+
+def test_unsafe_exif_stops_export_before_relocating_any_pick(tmp_path, rightwayup_stub):
+    good, bad = tmp_path / "a.jpg", tmp_path / "b.jpg"
+    with Image.new("RGB", (80, 40), "blue") as image:
+        image.save(good, exif=_offset_exif()[0])
+    originals = {good: good.read_bytes(), bad: _unsafe_photo(bad)}
+    args = cli.parse_args([str(tmp_path), "--move", "--enhance", "--enhance-style", "general"])
+    with pytest.raises(SystemExit, match=r"b\.jpg: Cannot safely"):
+        cli.move_picks([cli.Photo(good, "a"), cli.Photo(bad, "b")], tmp_path, args, None)
+    assert all(path.read_bytes() == data for path, data in originals.items())
+    assert not (tmp_path / "Highlights").exists()
+
+
+def test_standalone_checks_every_photo_before_writing(tmp_path, rightwayup_stub):
+    with Image.new("RGB", (80, 40), "blue") as image:
+        image.save(tmp_path / "a.jpg", exif=_offset_exif()[0])
+    _unsafe_photo(tmp_path / "b.jpg")
+    with pytest.raises(SystemExit, match=r"b\.jpg: Cannot safely"):
+        main([str(tmp_path), "--style", "general"])
+    assert not (tmp_path / "Enhanced").exists()
+    assert main([str(tmp_path), "--style", "general", "--no-orientation"]) == 0

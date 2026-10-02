@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 from tqdm import tqdm
 
-from fotosort.exif import patch_exif_geometry
+from fotosort.exif import ExifGeometryError, patch_exif_geometry
 from fotosort.orientation import (
     MIN_ANGLE,
     add_orientation_arguments,
@@ -350,9 +350,32 @@ def enhance_file(src: Path, dst: Path, style: str, strength: float, *, orienter=
         details["orientation_crop_fraction"] = 1 - out.width * out.height / (im.width * im.height)
         details["output_width"], details["output_height"] = out.size
         dst.parent.mkdir(parents=True, exist_ok=True)
-        save_like_original(out, im, dst, orientation_normalized=orienter is not None)
+        try:
+            save_like_original(out, im, dst, orientation_normalized=orienter is not None)
+        except ExifGeometryError as exc:
+            raise _exif_failure(src, exc) from exc
         out.close()
     return details
+
+
+def _exif_failure(src: Path, exc: ExifGeometryError) -> SystemExit:
+    return SystemExit(f"{src}: {exc}. --no-orientation keeps its EXIF unchanged.")
+
+
+def check_exif_geometry(paths) -> None:
+    """Reject unpatchable EXIF before an orientation-corrected export copies, moves or writes anything."""
+    from fotosort.scan import is_raw
+
+    for path in paths:
+        if is_raw(path):
+            continue  # a decoded RAW carries a minimal EXIF built by Pillow
+        with Image.open(path) as im:
+            exif, size = im.info.get("exif"), im.size
+        if exif:
+            try:
+                patch_exif_geometry(exif, size)
+            except ExifGeometryError as exc:
+                raise _exif_failure(path, exc) from exc
 
 
 @contextmanager
@@ -412,6 +435,8 @@ def main(argv=None) -> int:
         return 1
 
     orienter = load_orienter(args, args.strength)
+    if orienter is not None:
+        check_exif_geometry(files)
     embedder = style_emb = None
     if not args.style and not args.no_clip:
         from fotosort.embed import Embedder

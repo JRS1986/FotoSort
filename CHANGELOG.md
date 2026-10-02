@@ -25,8 +25,10 @@ All notable changes to FotoSort are documented here. The format follows
 ### Fixed
 - Preserve MakerNote offsets and opaque EXIF data when normalizing enhanced
   copies. Patch existing orientation and image-dimension values without moving
-  directories, metadata, or embedded thumbnails. Reject unsafe geometry metadata
-  before saving an output instead of silently rebuilding the EXIF block.
+  directories or metadata, and unlink the stale embedded thumbnail so viewers do
+  not show it sideways. Check every source before an export copies, moves, or
+  writes anything, and reject unsafe geometry metadata with the photo's path
+  instead of silently rebuilding the EXIF block.
 
 ## [0.2.0] - 2026-09-21
 
