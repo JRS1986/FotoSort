@@ -6,6 +6,19 @@ All notable changes to FotoSort are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Run local RightWayUp orientation correction during `--enhance` exports and
+  `fotosort enhance`, including tilted horizons with empty corners cropped while
+  retaining the upright aspect ratio. Reuse one Max model per export and honour
+  upstream strict abstention; expose `--no-orientation`, `--orientation-tier`, and
+  `--orientation-snap` (0 for any angle, 90 for quarter turns without cropping).
+- Record orientation estimates, confidence, abstentions, applied correction and
+  crop extent in a separate enhancement CSV per export. Preserve original files,
+  normalize EXIF orientation on corrected copies, and retain capture metadata
+  and RGB ICC profiles. Zero strength skips orientation inference.
+- Give standalone enhanced copies unique filenames on repeated exports, avoiding
+  replacement of existing photos or outputs when names collide.
+
 ## [0.2.0] - 2026-09-21
 
 Experimental preview adding persistent review decisions, a local visual reviewer,

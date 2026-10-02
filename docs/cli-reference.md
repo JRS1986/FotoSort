@@ -58,8 +58,11 @@ match v0.2.0. Provider model access depends on your account or server.
 | `--xmp` / `--xmp-overwrite` | off | write XMP sidecars for `picks` or `all`; replace existing ones |
 | `--raw-cull` / `--raw-keep-benefit` / `--raw-cull-move` | off / low / off | list RAWs to keep vs cull; keep threshold; move the culled ones to `_DELETE_ME_raw` |
 | `--taste-dir` / `--taste-weight` | off / 0.5 | folder of photos you love; frames resembling them get up to this bonus |
-| `--enhance` | | write enhanced JPEG copies of picks |
+| `--enhance` | off | write enhanced JPEG copies of picks, with local RightWayUp straightening and corner cropping |
 | `--enhance-strength` / `--enhance-style` | 1.0 / auto | global strength; force one style |
+| `--no-orientation` | off | disable RightWayUp during enhancement; has no effect on selection |
+| `--orientation-tier` | max | RightWayUp model: `pico`, `nano`, `fast`, `balanced`, `pro`, or `max`; uses strict abstention |
+| `--orientation-snap` | 0 | `0`: correct any angle and crop empty corners; `90`: quarter turns without cropping |
 | `--apply-report` | | skip analysis; act on the `selected=1` rows of the existing report |
 | `--report` | fotosort_report.csv (award_roll_report.csv in award-roll mode) | CSV report path, relative to the photo folder |
 | `--no-cache` | | ignore and do not write the feature cache |
@@ -105,9 +108,62 @@ fotosort enhance IMG_0042.jpg --style landscape --strength 0.8
 ```
 
 This writes JPEGs to an `Enhanced/` subfolder by default; `--out` chooses
-another destination. Existing enhanced files with the same name can be
-replaced on subsequent runs. `--no-clip` uses image statistics for style
+another destination. Filename collisions get numeric suffixes, preserving
+existing photos and enhanced copies. `--no-clip` uses image statistics for style
 detection, and `--style` chooses a recipe explicitly.
+
+The three orientation flags in the table above also apply to `fotosort enhance`,
+with the same defaults. For example:
+
+```bash
+# Correct tilted horizons, crop empty corners, and enhance the colour/tone.
+fotosort enhance /path/to/photos --no-clip
+
+# Fix sideways/upside-down images without cropping the frame.
+fotosort /path/to/photos --apply-report --copy --enhance --orientation-snap 90
+
+# Use only the existing tone/colour recipes, without downloading either model.
+fotosort enhance /path/to/photos --no-clip --no-orientation
+```
+
+RightWayUp runs locally using the Max tier and its upstream **strict** abstention
+thresholds. An abstention skips model rotation, but EXIF orientation and the
+tone/colour recipe are still applied. The saved EXIF orientation is normalized so
+viewers do not rotate the pixels twice; other EXIF data and RGB ICC profiles are
+retained. EXIF image dimensions are updated to match the output. RAW and DxO
+inputs use the same decoded-image path and produce JPEGs.
+
+Continuous correction crops a centered rectangle with the aspect ratio of the
+nearest upright quarter turn. It trims edges to exclude empty corners, with a
+small allowance for bicubic interpolation. It can remove substantial content
+on heavily tilted images. Quarter turns require no crop. Model predictions can
+be wrong, including confident ones; review enhanced copies before using them.
+
+`--no-orientation` keeps the previous tone/colour-only behavior. Zero strength
+(`--strength 0` or `--enhance-strength 0`) skips both the recipe and RightWayUp;
+JPEG output is still re-encoded. Ordinary analysis, dry runs, and exports without
+`--enhance` never initialize RightWayUp or download its weights. Model setup
+errors stop enhanced export before copying/moving picks and give an actionable
+message; they do not silently produce uncorrected images.
+
+RightWayUp is included in the regular installation. Its ONNX weights download
+from `ortusai/rightwayup` on Hugging Face on first use, in addition to FotoSort's
+analysis models (about 300 MB for Max INT8). Upstream selects INT8 on CPU and FP16 when ONNX Runtime provides
+CUDA. Choose `--orientation-tier fast` for lower resource use. To run offline,
+cache the model first or set `RIGHTWAYUP_MODEL_DIR` to a folder containing that
+tier's ONNX files (for example `max-l280-int8.onnx` for Max on CPU). Photo pixels
+are never sent to a service for this operation.
+
+Each export writes a new `fotosort_enhancement.csv` in its output root (or each
+standalone output folder), adding a numeric suffix on later runs. The selection
+report and its review identities are unchanged. Each row records source/output
+paths, style, strength, status (`corrected`, `upright`, `abstained`, `disabled`, or
+`zero_strength`), estimated clockwise angle, confidence, abstention, actual
+counter-clockwise correction, tier, cascade routing, precision, device, snap
+setting, fraction of source area cropped, and output dimensions. Disabled cases
+have no estimate/confidence. Successful rows are flushed as each output is saved,
+so a later failure does not erase earlier records. These local reports contain
+photo paths; sanitize them before publishing.
 
 
 ## Evaluation harness

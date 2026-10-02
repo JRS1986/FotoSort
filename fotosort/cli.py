@@ -26,6 +26,7 @@ from fotosort.editing import STYLE_TO_PRESET, benefit_band, edit_benefit
 from fotosort.group import cluster_bursts, cluster_moments, cluster_scenes
 from fotosort.judge import Verdict
 from fotosort.labels import bucket_name, is_people_label, load_labels
+from fotosort.orientation import add_orientation_arguments, load_orienter
 from fotosort.quality import (
     detail_focus,
     exposure,
@@ -267,11 +268,13 @@ def parse_args(argv=None):
     p.add_argument("--skip-labels", default="document or screenshot", help="Comma-separated labels never selected")
     p.add_argument("--with-sidecars", action="store_true", help="Also move RAW/XMP files with the same name")
     p.add_argument("--enhance", action="store_true",
-                   help="Write style-aware enhanced versions of the picks. With --copy only the enhanced "
+                   help="Write style-aware enhanced versions with RightWayUp orientation correction. "
+                        "With --copy only the enhanced "
                         "version goes into the output folder (originals stay where they are); with --move "
                         "the original is moved there and the enhanced version goes into an Enhanced/ subfolder")
     p.add_argument("--enhance-strength", type=float, default=1.0, help="0 = untouched, 1 = default, 1.5 = punchy")
     p.add_argument("--enhance-style", help="Force one enhancement style for all picks instead of detecting it")
+    add_orientation_arguments(p)
     p.add_argument("--report", help="CSV report path relative to folder "
                    "(fotosort_report.csv, or award_roll_report.csv in award-roll mode)")
     p.add_argument("--batch-size", type=int, default=32)
@@ -1403,12 +1406,14 @@ def move_picks(picks: list[Photo], root: Path, args, emb) -> int:
     layout, then enhance. With --copy --enhance the enhanced JPEG is the copy;
     with --move --enhance the originals move and the enhanced versions go into
     an Enhanced/ subfolder of each destination folder."""
+    picks = [ph for ph in picks if ph.path.exists()]
+    # Fail model setup before relocating any originals or sidecars.
+    orienter = load_orienter(args, args.enhance_strength) if args.enhance and picks else None
     out_dir = root / args.highlights
     out_dir.mkdir(exist_ok=True)
     enhanced_only = args.enhance and args.copy
     op = shutil.copy2 if args.copy else shutil.move
     moved = 0
-    picks = [ph for ph in picks if ph.path.exists()]
     for ph in picks:
         dest_dir = layout_dir(out_dir, ph, args.layout)
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -1437,7 +1442,7 @@ def move_picks(picks: list[Photo], root: Path, args, emb) -> int:
             base.mkdir(parents=True, exist_ok=True)
             return unique_dest(base, _jpg_name(ph.path), root)
 
-        enhance_picks(picks, emb, args, dest_of, out_dir)
+        enhance_picks(picks, emb, args, dest_of, out_dir, orienter=orienter)
     return 0
 
 
@@ -1609,24 +1614,30 @@ def update_report_column(report: Path, column: str, values: dict[str, str]) -> N
     os.replace(tmp, report)
 
 
-def enhance_picks(picks: list[Photo], emb, args, dest_of, out_dir: Path) -> None:
+def enhance_picks(picks: list[Photo], emb, args, dest_of, out_dir: Path, *, orienter=None) -> None:
     """Enhance each pick from its source (the DxO twin if there is one) into `dest_of(pick)`."""
-    from fotosort.enhance import STYLE_PROMPTS, detect_style, enhance_file, image_stats
+    from fotosort.enhance import STYLE_PROMPTS, detect_style, enhance_file, enhancement_report, image_stats
 
+    if not picks:
+        return
     style_emb = None
     if not args.enhance_style and emb is not None:
         style_emb = emb.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
     styles = defaultdict(int)
-    for ph in tqdm(picks, unit="img", desc="Enhancing"):
-        src = ph.source or ph.path
-        if args.enhance_style:
-            style = args.enhance_style
-        elif ph.person >= args.person_area > 0:
-            style = "portrait"  # a visible person: gentle tone curve, protected skin, no heavy clarity
-        else:
-            stats = image_stats(np.asarray(load_small(str(src), 512), dtype=np.float32))
-            style = detect_style(ph.emb if style_emb is not None else None, style_emb, stats)
-        styles[style] += 1
-        enhance_file(src, dest_of(ph), style, args.enhance_strength)
+    with enhancement_report(out_dir) as record:
+        for ph in tqdm(picks, unit="img", desc="Enhancing"):
+            src = ph.source or ph.path
+            if args.enhance_style:
+                style = args.enhance_style
+            elif ph.person >= args.person_area > 0:
+                style = "portrait"  # a visible person: gentle tone curve, protected skin, no heavy clarity
+            else:
+                stats = image_stats(np.asarray(load_small(str(src), 512), dtype=np.float32))
+                style = detect_style(ph.emb if style_emb is not None else None, style_emb, stats)
+            styles[style] += 1
+            dst = dest_of(ph)
+            details = enhance_file(src, dst, style, args.enhance_strength, orienter=orienter,
+                                   orientation_snap=args.orientation_snap)
+            record(src, dst, style, args.enhance_strength, details)
     summary = ", ".join(f"{n} {s}" for s, n in sorted(styles.items(), key=lambda kv: -kv[1]))
     print(f"Enhanced {len(picks)} picks into {out_dir} ({summary})")

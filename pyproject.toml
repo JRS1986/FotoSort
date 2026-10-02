@@ -29,6 +29,7 @@ dependencies = [
     "pillow>=10.0",
     "numpy>=1.26",
     "tqdm>=4.66",
+    "rightwayup>=1.0,<2",
 ]
 
 [project.optional-dependencies]

@@ -7,11 +7,15 @@ Standalone use:  python -m fotosort enhance PATH [PATH...] [--out DIR] [--style 
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
+
+from fotosort.orientation import add_orientation_arguments, crop_rotation_corners, load_orienter, orientation_details
 
 # --------------------------------------------------------------------------- styles
 
@@ -290,12 +294,25 @@ def detect_style(emb: np.ndarray | None, style_emb: np.ndarray | None, stats: di
     return next(st for st in order if st != "black and white" or stats["chroma"] < 1.0)
 
 
-def save_like_original(out: Image.Image, original: Image.Image, dst: Path, quality: int = 92) -> None:
-    """Save with the original's EXIF and ICC profile. The pixels are processed in
-    stored orientation, so the EXIF orientation tag stays valid."""
+def save_like_original(out: Image.Image, original: Image.Image, dst: Path, quality: int = 92,
+                       *, orientation_normalized: bool = False) -> None:
+    """Retain EXIF/ICC, normalizing orientation only when it was applied to pixels."""
     kw = {}
     if original.info.get("exif"):
         kw["exif"] = original.info["exif"]
+        if orientation_normalized:
+            exif = Image.Exif()
+            exif.load(original.getexif().tobytes())
+            exif[274] = 1
+            for tag, size in ((256, out.width), (257, out.height)):
+                if tag in exif:
+                    exif[tag] = size
+            if 0x8769 in exif:
+                details = exif.get_ifd(0x8769)
+                for tag, size in ((40962, out.width), (40963, out.height)):
+                    if tag in details:
+                        details[tag] = size
+            kw["exif"] = exif.tobytes()
     if original.info.get("icc_profile") and original.mode == "RGB":
         kw["icc_profile"] = original.info["icc_profile"]
     src = getattr(original, "filename", None)
@@ -304,13 +321,68 @@ def save_like_original(out: Image.Image, original: Image.Image, dst: Path, quali
     out.save(dst, "JPEG", quality=quality, optimize=True, **kw)
 
 
-def enhance_file(src: Path, dst: Path, style: str, strength: float) -> None:
+def enhance_file(src: Path, dst: Path, style: str, strength: float, *, orienter=None,
+                 orientation_snap: int = 0) -> dict:
     from fotosort.quality import open_full
 
-    im = open_full(str(src))
-    out = enhance(im, style, strength)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    save_like_original(out, im, dst)
+    # RAW decoders and EXIF-transposed PIL images do not retain a source filename.
+    if src.resolve() == dst.resolve() or (dst.exists() and src.samefile(dst)):
+        raise SystemExit(f"Refusing to overwrite the original {src}; choose another --out folder")
+    if orientation_snap not in (0, 90):
+        raise ValueError("orientation_snap must be 0 or 90")
+    orienter = orienter if strength > 0 else None
+    details = {"orientation_status": "zero_strength" if strength <= 0 else "disabled",
+               "orientation_correction_ccw": 0}
+    with open_full(str(src)) as im:
+        if orienter is None:
+            out = enhance(im, style, strength)
+        else:
+            with ImageOps.exif_transpose(im) as oriented:
+                result = orienter.predict(oriented)
+                details = orientation_details(result, orienter, orientation_snap)
+                # Tone calculations see only photo pixels, before continuous rotation adds borders.
+                toned = enhance(oriented, style, strength)
+                out = orienter.correct(toned, snap=orientation_snap or None, result=result)
+                cropped = crop_rotation_corners(out, oriented.size, details["orientation_correction_ccw"])
+                if cropped is not out:
+                    out.close()
+                out = cropped
+                toned.close()
+        details["orientation_crop_fraction"] = 1 - out.width * out.height / (im.width * im.height)
+        details["output_width"], details["output_height"] = out.size
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        save_like_original(out, im, dst, orientation_normalized=orienter is not None)
+        out.close()
+    return details
+
+
+@contextmanager
+def enhancement_report(folder: Path):
+    """Keep a new CSV per export, flushing successful outputs even if a later one fails."""
+    folder.mkdir(parents=True, exist_ok=True)
+    number = 1
+    while True:
+        suffix = "" if number == 1 else f"_{number}"
+        path = folder / f"fotosort_enhancement{suffix}.csv"
+        try:
+            stream = path.open("x", newline="", encoding="utf-8")
+            break
+        except FileExistsError:
+            number += 1
+    fields = ["source", "output", "style", "strength", "orientation_status", "orientation_angle_cw",
+              "orientation_confidence", "orientation_abstain", "orientation_correction_ccw",
+              "orientation_tier", "orientation_routed", "orientation_precision", "orientation_device",
+              "orientation_snap", "orientation_crop_fraction", "output_width", "output_height"]
+    with stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+
+        def record(src, dst, style, strength, details):
+            writer.writerow(dict(source=str(src), output=str(dst), style=style, strength=strength, **details))
+            stream.flush()
+
+        print(f"Enhancement report: {path}")
+        yield record
 
 
 # --------------------------------------------------------------------------- standalone CLI
@@ -321,9 +393,11 @@ def main(argv=None) -> int:
     p.add_argument("--out", type=Path, help="Output folder (default: <folder>/Enhanced)")
     p.add_argument("--style", choices=STYLES, help="Force a style instead of detecting it")
     p.add_argument("--strength", type=float, default=1.0, help="0 = untouched, 1 = default, 1.5 = punchy")
-    p.add_argument("--no-clip", action="store_true", help="Detect style from image statistics only (no model)")
+    p.add_argument("--no-clip", action="store_true", help="Detect style from image statistics only (no CLIP model)")
+    add_orientation_arguments(p)
     args = p.parse_args(argv)
 
+    from fotosort.cli import unique_dest
     from fotosort.scan import find_images
 
     files: list[Path] = []
@@ -337,6 +411,7 @@ def main(argv=None) -> int:
         print("No JPEG or RAW files found.", file=sys.stderr)
         return 1
 
+    orienter = load_orienter(args, args.strength)
     embedder = style_emb = None
     if not args.style and not args.no_clip:
         from fotosort.embed import Embedder
@@ -347,23 +422,27 @@ def main(argv=None) -> int:
 
     from tqdm import tqdm
 
-    for src in tqdm(files, unit="img", desc="Enhancing"):
-        out_dir = args.out.expanduser().resolve() if args.out else src.parent / "Enhanced"
-        from fotosort.quality import load_small, open_full
+    with ExitStack() as stack:
+        reports = {}
+        for src in tqdm(files, unit="img", desc="Enhancing"):
+            out_dir = args.out.expanduser().resolve() if args.out else src.parent / "Enhanced"
+            from fotosort.quality import load_small
 
-        im = open_full(str(src))
-        if args.style:
-            style = args.style
-        else:
-            small = load_small(str(src), 512)
-            stats = image_stats(np.asarray(small, dtype=np.float32))
-            emb = embedder.embed_batch([embedder.prepare(small)])[0] if embedder else None
-            style = detect_style(emb, style_emb, stats)
-        out = enhance(im, style, args.strength)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        dst = out_dir / (src.name if src.suffix.lower() in {".jpg", ".jpeg"} else src.stem + ".jpg")
-        save_like_original(out, im, dst)
-        tqdm.write(f"{src.name}: {style}")
+            if args.style:
+                style = args.style
+            else:
+                small = load_small(str(src), 512)
+                stats = image_stats(np.asarray(small, dtype=np.float32))
+                emb = embedder.embed_batch([embedder.prepare(small)])[0] if embedder else None
+                style = detect_style(emb, style_emb, stats)
+            if out_dir not in reports:
+                reports[out_dir] = stack.enter_context(enhancement_report(out_dir))
+            output_name = src if src.suffix.lower() in {".jpg", ".jpeg"} else src.with_suffix(".jpg")
+            dst = unique_dest(out_dir, output_name, src.parent)
+            details = enhance_file(src, dst, style, args.strength, orienter=orienter,
+                                   orientation_snap=args.orientation_snap)
+            reports[out_dir](src, dst, style, args.strength, details)
+            tqdm.write(f"{src.name}: {style}, orientation {details['orientation_status']}")
     print(f"Enhanced {len(files)} images.")
     return 0
 

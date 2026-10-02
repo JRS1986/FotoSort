@@ -14,7 +14,8 @@ from fotosort.judge import Verdict
 
 
 @pytest.mark.parametrize("use_judge,use_bursts", [(False, False), (True, False), (True, True)])
-def test_pipeline_keeps_originals_records_decisions_and_reuses_features(tmp_path, monkeypatch, use_judge, use_bursts):
+def test_pipeline_keeps_originals_records_decisions_and_reuses_features(
+        tmp_path, monkeypatch, use_judge, use_bursts, rightwayup_stub):
     counts = {"embeddings": 0, "detector": 0, "judged": 0, "dino": 0}
 
     class Embedder:
@@ -87,6 +88,11 @@ def test_pipeline_keeps_originals_records_decisions_and_reuses_features(tmp_path
     assert all(r["decision"] and r["subject_sharpness"] for r in rows if r["reject"] != "unreadable")
     assert any(r["selected"] == "1" for r in rows)
     assert list((tmp_path / "Highlights").glob("*.jpg"))
+    with (tmp_path / "Highlights" / "fotosort_enhancement.csv").open() as stream:
+        enhancements = list(csv.DictReader(stream))
+    assert len(enhancements) == sum(r["selected"] == "1" for r in rows)
+    assert all(float(r["orientation_correction_ccw"]) == 90 for r in enhancements)
+    assert len(rightwayup_stub.instances) == 1
     expected_clip = 9 if use_bursts else 3  # whole frame plus two local burst crops
     expected_dino = 9 if use_bursts else 6  # whole, subject, optional interaction view
     assert counts["embeddings"] == expected_clip and counts["detector"] == 3

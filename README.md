@@ -106,6 +106,21 @@ fotosort /path/to/photos --include IMG_0042,IMG_0108
 fotosort enhance /path/to/photos --no-clip
 ```
 
+Enhancement includes local [RightWayUp](https://github.com/ortusaitech/rightwayup)
+orientation correction, including tilted horizons. It respects EXIF orientation,
+uses the Max tier with strict abstention, and crops empty corners while retaining
+the upright aspect ratio. Straightening trims image edges; quarter turns retain
+the full frame. Uncertain predictions leave the orientation unchanged. Originals
+are preserved, and `fotosort_enhancement.csv` in the export folder records each
+estimate, confidence, applied rotation, and cropped fraction.
+
+RightWayUp is installed with FotoSort; its weights download on the first enhanced
+export. Photos are processed locally. Use `--no-orientation` for tone/colour
+enhancement alone, `--orientation-snap 90` for quarter turns only, or
+`--orientation-tier fast` for a smaller, faster model. `--no-clip` only disables
+CLIP style detection; add `--no-orientation` to enhance without either model.
+See the [enhancement options and offline setup](docs/cli-reference.md#standalone-enhancement).
+
 Standard mode groups photos by day and subject. The default budget starts at
 five picks per group, increases for larger groups, and is capped at fifteen.
 `--max-per-group` and `--extra-per` control it. `--layout day`, `species`, or
