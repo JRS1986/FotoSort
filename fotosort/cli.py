@@ -1407,8 +1407,12 @@ def move_picks(picks: list[Photo], root: Path, args, emb) -> int:
     with --move --enhance the originals move and the enhanced versions go into
     an Enhanced/ subfolder of each destination folder."""
     picks = [ph for ph in picks if ph.path.exists()]
-    # Fail model setup before relocating any originals or sidecars.
+    # Fail model setup and unpatchable EXIF before relocating any originals or sidecars.
     orienter = load_orienter(args, args.enhance_strength) if args.enhance and picks else None
+    if orienter is not None:
+        from fotosort.enhance import check_exif_geometry
+
+        check_exif_geometry([ph.source or ph.path for ph in picks])
     out_dir = root / args.highlights
     out_dir.mkdir(exist_ok=True)
     enhanced_only = args.enhance and args.copy

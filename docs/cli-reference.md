@@ -131,7 +131,17 @@ RightWayUp runs locally using the Max tier and its upstream **strict** abstentio
 thresholds. An abstention skips model rotation, but EXIF orientation and the
 tone/colour recipe are still applied. The saved EXIF orientation is normalized so
 viewers do not rotate the pixels twice; other EXIF data and RGB ICC profiles are
-retained. EXIF image dimensions are updated to match the output. RAW and DxO
+retained. Existing EXIF orientation/dimension values are patched directly in the
+original byte block, preserving MakerNote offsets, unknown tags, and padding.
+Missing tags are not inserted. The embedded EXIF thumbnail is unlinked, because
+it shows the uncorrected original and viewers would display it without its
+rotation; its bytes stay in place so no offsets move. Proprietary previews inside
+MakerNotes are preserved as originally stored. Every source's EXIF is checked
+before an export copies, moves, or writes anything: malformed or unsupported
+geometry metadata stops the export with the photo's path, rather than being
+silently rewritten or stripped. `--no-orientation` copies that EXIF unchanged.
+This preserves existing MakerNote data, but cannot repair metadata that was
+already corrupt. RAW and DxO
 inputs use the same decoded-image path and produce JPEGs.
 
 Model estimates are continuous, so a level photo rarely scores exactly 0°.
