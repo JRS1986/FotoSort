@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 from tqdm import tqdm
 
+from fotosort.exif import patch_exif_geometry
 from fotosort.orientation import (
     MIN_ANGLE,
     add_orientation_arguments,
@@ -308,18 +309,7 @@ def save_like_original(out: Image.Image, original: Image.Image, dst: Path, quali
     if original.info.get("exif"):
         kw["exif"] = original.info["exif"]
         if orientation_normalized:
-            exif = Image.Exif()
-            exif.load(original.getexif().tobytes())
-            exif[274] = 1
-            for tag, size in ((256, out.width), (257, out.height)):
-                if tag in exif:
-                    exif[tag] = size
-            if 0x8769 in exif:
-                details = exif.get_ifd(0x8769)
-                for tag, size in ((40962, out.width), (40963, out.height)):
-                    if tag in details:
-                        details[tag] = size
-            kw["exif"] = exif.tobytes()
+            kw["exif"] = patch_exif_geometry(kw["exif"], out.size)
     if original.info.get("icc_profile") and original.mode == "RGB":
         kw["icc_profile"] = original.info["icc_profile"]
     src = getattr(original, "filename", None)

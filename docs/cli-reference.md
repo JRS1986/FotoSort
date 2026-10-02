@@ -131,7 +131,13 @@ RightWayUp runs locally using the Max tier and its upstream **strict** abstentio
 thresholds. An abstention skips model rotation, but EXIF orientation and the
 tone/colour recipe are still applied. The saved EXIF orientation is normalized so
 viewers do not rotate the pixels twice; other EXIF data and RGB ICC profiles are
-retained. EXIF image dimensions are updated to match the output. RAW and DxO
+retained. Existing EXIF orientation/dimension values are patched directly in the
+original byte block, preserving MakerNote offsets, unknown tags, and padding.
+Missing tags are not inserted. Embedded thumbnails and proprietary previews are
+preserved as originally stored, rather than regenerated for the enhanced image.
+Malformed or unsupported geometry metadata stops that export before the output
+is saved; it is not silently rewritten or stripped. This preserves existing
+MakerNote data, but cannot repair metadata that was already corrupt. RAW and DxO
 inputs use the same decoded-image path and produce JPEGs.
 
 Model estimates are continuous, so a level photo rarely scores exactly 0°.

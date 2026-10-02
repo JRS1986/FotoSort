@@ -22,6 +22,12 @@ All notable changes to FotoSort are documented here. The format follows
 - Give standalone enhanced copies unique filenames on repeated exports, avoiding
   replacement of existing photos or outputs when names collide.
 
+### Fixed
+- Preserve MakerNote offsets and opaque EXIF data when normalizing enhanced
+  copies. Patch existing orientation and image-dimension values without moving
+  directories, metadata, or embedded thumbnails. Reject unsafe geometry metadata
+  before saving an output instead of silently rebuilding the EXIF block.
+
 ## [0.2.0] - 2026-09-21
 
 Experimental preview adding persistent review decisions, a local visual reviewer,
