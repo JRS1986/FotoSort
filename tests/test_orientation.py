@@ -52,31 +52,56 @@ def test_exif_is_applied_before_prediction_and_normalized_only_in_copy(
     assert details["orientation_correction_ccw"] == 90
 
 
-@pytest.mark.parametrize("angle,snap,abstain,correction,status", [
-    (89, 90, False, 90, "corrected"), (179, 90, False, 180, "corrected"),
-    (269, 90, False, 270, "corrected"), (359, 90, False, 0, "upright"),
-    (12.5, 0, False, 12.5, "corrected"), (90, 90, True, 0, "abstained"),
+@pytest.mark.parametrize("angle,snap,min_angle,abstain,correction,status", [
+    (89, 90, 1, False, 90, "corrected"), (179, 90, 1, False, 180, "corrected"),
+    (269, 90, 1, False, 270, "corrected"), (359, 90, 1, False, 0, "upright"),
+    (12.5, 0, 1, False, 12.5, "corrected"), (90, 90, 1, True, 0, "abstained"),
+    # Residual tilts within min_angle are model error: level photos stay unrotated and uncropped.
+    (0.6, 0, 1, False, 0, "upright"), (359.4, 0, 1, False, 0, "upright"),
+    (90.6, 0, 1, False, 90, "corrected"), (0.6, 0, 0, False, 0.6, "corrected"),
+    (360.0, 0, 1, False, 0, "upright"),  # upstream decoding can round up to exactly 360
 ])
-def test_report_matches_actual_correction(tmp_path, rightwayup_stub, angle, snap, abstain, correction, status):
+def test_report_matches_actual_correction(tmp_path, rightwayup_stub, angle, snap, min_angle, abstain,
+                                          correction, status):
     src, dst = tmp_path / "in.jpg", tmp_path / "out.jpg"
     _photo(src)
     model = rightwayup_stub(tier="fast", abstain="strict")
     model.angle, model.abstain = angle, abstain
-    details = enhance_file(src, dst, "general", 1, orienter=model, orientation_snap=snap)
-    assert details["orientation_angle_cw"] == angle
-    assert details["orientation_correction_ccw"] == correction
+    details = enhance_file(src, dst, "general", 1, orienter=model, orientation_snap=snap,
+                           orientation_min_angle=min_angle)
+    assert details["orientation_angle_cw"] == angle % 360
+    assert details["orientation_correction_ccw"] == pytest.approx(correction)
     assert details["orientation_status"] == status
     assert details["orientation_confidence"] == 0.9
     assert details["orientation_abstain"] == int(abstain)
     assert details["orientation_tier"] == "fast"
-    assert len(model.seen) == len(model.corrections) == 1
+    assert details["orientation_min_angle"] == min_angle
+    assert len(model.seen) == 1 and len(model.corrections) == (1 if correction else 0)
     with Image.open(dst) as image:
-        if snap == 0:
+        if correction % 90:
             assert image.width < 80 and image.height < 40
             assert abs(image.width / image.height - 2) < 0.1
             assert details["orientation_crop_fraction"] > 0
         else:
             assert image.size == ((40, 80) if correction in (90, 270) else (80, 40))
+            assert details["orientation_crop_fraction"] == 0
+
+
+def test_confidence_rounding_is_clamped_but_non_finite_output_fails(tmp_path, rightwayup_stub):
+    src = tmp_path / "in.jpg"
+    _photo(src)
+    model = rightwayup_stub("max", "strict")
+    model.confidence = 1.0000001  # a float32 probability sum can round just above 1
+    assert enhance_file(src, tmp_path / "a.jpg", "general", 1, orienter=model)["orientation_confidence"] == 1
+    model.angle = float("nan")
+    with pytest.raises(ValueError, match="non-finite"):
+        enhance_file(src, tmp_path / "b.jpg", "general", 1, orienter=model)
+
+
+@pytest.mark.parametrize("value", ["-1", "45", "nan"])
+def test_min_angle_rejects_out_of_range_values(tmp_path, value):
+    with pytest.raises(SystemExit):
+        cli.parse_args([str(tmp_path), "--orientation-min-angle", value])
 
 
 @pytest.mark.parametrize("size", [(120, 80), (81, 121), (300, 40), (40, 300)])
@@ -130,10 +155,12 @@ def test_raw_decode_and_zero_strength(tmp_path, monkeypatch, rightwayup_stub):
     monkeypatch.setattr("fotosort.quality.open_full", lambda _: Image.new("RGB", (80, 40), "red"))
     model = rightwayup_stub("max", "strict")
     assert enhance_file(src, dst, "general", 1, orienter=model)["orientation_correction_ccw"] == 90
-    assert Image.open(dst).size == (40, 80)
+    with Image.open(dst) as image:
+        assert image.size == (40, 80)
     details = enhance_file(src, dst, "general", 0, orienter=model)
     assert details["orientation_status"] == "zero_strength"
-    assert Image.open(dst).size == (80, 40) and len(model.seen) == 1
+    with Image.open(dst) as image:
+        assert image.size == (80, 40) and len(model.seen) == 1
     assert src.read_bytes() == b"RAW original"
 
 

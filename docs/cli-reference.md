@@ -63,6 +63,7 @@ match v0.2.0. Provider model access depends on your account or server.
 | `--no-orientation` | off | disable RightWayUp during enhancement; has no effect on selection |
 | `--orientation-tier` | max | RightWayUp model: `pico`, `nano`, `fast`, `balanced`, `pro`, or `max`; uses strict abstention |
 | `--orientation-snap` | 0 | `0`: correct any angle and crop empty corners; `90`: quarter turns without cropping |
+| `--orientation-min-angle` | 1.0 | treat residual tilts below this many degrees as level (the `rightwayup fix` default); `0` applies every estimate |
 | `--apply-report` | | skip analysis; act on the `selected=1` rows of the existing report |
 | `--report` | fotosort_report.csv (award_roll_report.csv in award-roll mode) | CSV report path, relative to the photo folder |
 | `--no-cache` | | ignore and do not write the feature cache |
@@ -112,7 +113,7 @@ another destination. Filename collisions get numeric suffixes, preserving
 existing photos and enhanced copies. `--no-clip` uses image statistics for style
 detection, and `--style` chooses a recipe explicitly.
 
-The three orientation flags in the table above also apply to `fotosort enhance`,
+The four orientation flags in the table above also apply to `fotosort enhance`,
 with the same defaults. For example:
 
 ```bash
@@ -132,6 +133,12 @@ tone/colour recipe are still applied. The saved EXIF orientation is normalized s
 viewers do not rotate the pixels twice; other EXIF data and RGB ICC profiles are
 retained. EXIF image dimensions are updated to match the output. RAW and DxO
 inputs use the same decoded-image path and produce JPEGs.
+
+Model estimates are continuous, so a level photo rarely scores exactly 0°.
+Residual tilts below `--orientation-min-angle` (1.0° by default, matching
+`rightwayup fix --min-angle`) are treated as model error: a nearly upright photo
+is left unrotated, and a nearly sideways one receives a lossless quarter turn.
+The threshold follows upstream and has not been calibrated on reviewed photos.
 
 Continuous correction crops a centered rectangle with the aspect ratio of the
 nearest upright quarter turn. It trims edges to exclude empty corners, with a
@@ -160,7 +167,7 @@ report and its review identities are unchanged. Each row records source/output
 paths, style, strength, status (`corrected`, `upright`, `abstained`, `disabled`, or
 `zero_strength`), estimated clockwise angle, confidence, abstention, actual
 counter-clockwise correction, tier, cascade routing, precision, device, snap
-setting, fraction of source area cropped, and output dimensions. Disabled cases
+setting, minimum angle, fraction of source area cropped, and output dimensions. Disabled cases
 have no estimate/confidence. Successful rows are flushed as each output is saved,
 so a later failure does not erase earlier records. These local reports contain
 photo paths; sanitize them before publishing.

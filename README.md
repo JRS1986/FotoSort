@@ -110,7 +110,8 @@ Enhancement includes local [RightWayUp](https://github.com/ortusaitech/rightwayu
 orientation correction, including tilted horizons. It respects EXIF orientation,
 uses the Max tier with strict abstention, and crops empty corners while retaining
 the upright aspect ratio. Straightening trims image edges; quarter turns retain
-the full frame. Uncertain predictions leave the orientation unchanged. Originals
+the full frame. Uncertain predictions leave the orientation unchanged, and
+residual tilts under 1° are treated as level (`--orientation-min-angle`). Originals
 are preserved, and `fotosort_enhancement.csv` in the export folder records each
 estimate, confidence, applied rotation, and cropped fraction.
 

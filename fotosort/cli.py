@@ -1637,7 +1637,8 @@ def enhance_picks(picks: list[Photo], emb, args, dest_of, out_dir: Path, *, orie
             styles[style] += 1
             dst = dest_of(ph)
             details = enhance_file(src, dst, style, args.enhance_strength, orienter=orienter,
-                                   orientation_snap=args.orientation_snap)
+                                   orientation_snap=args.orientation_snap,
+                                   orientation_min_angle=args.orientation_min_angle)
             record(src, dst, style, args.enhance_strength, details)
     summary = ", ".join(f"{n} {s}" for s, n in sorted(styles.items(), key=lambda kv: -kv[1]))
     print(f"Enhanced {len(picks)} picks into {out_dir} ({summary})")

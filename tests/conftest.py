@@ -12,6 +12,7 @@ def rightwayup_stub(monkeypatch):
     class Orienter:
         instances = []
         angle = 90.0
+        confidence = 0.9
         abstain = False
         precision = "int8"
         device = "CPUExecutionProvider"
@@ -26,7 +27,7 @@ def rightwayup_stub(monkeypatch):
 
         def predict(self, image):
             self.seen.append(np.array(image))
-            result = SimpleNamespace(angle_cw=self.angle, confidence=0.9, abstain=self.abstain,
+            result = SimpleNamespace(angle_cw=self.angle, confidence=self.confidence, abstain=self.abstain,
                                      tier=self.tier, routed=False)
             self.results.append(result)
             return result

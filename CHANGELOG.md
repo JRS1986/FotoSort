@@ -12,6 +12,9 @@ All notable changes to FotoSort are documented here. The format follows
   retaining the upright aspect ratio. Reuse one Max model per export and honour
   upstream strict abstention; expose `--no-orientation`, `--orientation-tier`, and
   `--orientation-snap` (0 for any angle, 90 for quarter turns without cropping).
+- Treat residual tilts below `--orientation-min-angle` (default 1.0°, as in
+  `rightwayup fix`) as level, so near-upright photos are not rotated and cropped
+  by model error and near-sideways photos receive lossless quarter turns.
 - Record orientation estimates, confidence, abstentions, applied correction and
   crop extent in a separate enhancement CSV per export. Preserve original files,
   normalize EXIF orientation on corrected copies, and retain capture metadata

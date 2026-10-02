@@ -6,6 +6,8 @@ import math
 
 from PIL import Image
 
+MIN_ANGLE = 1.0  # degrees; the default of upstream `rightwayup fix --min-angle`
+
 
 def add_orientation_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-orientation", action="store_true",
@@ -15,6 +17,16 @@ def add_orientation_arguments(parser: argparse.ArgumentParser) -> None:
                         help="RightWayUp model tier (default: max; weights download on first use)")
     parser.add_argument("--orientation-snap", type=int, choices=(0, 90), default=0,
                         help="0 = any angle with empty corners cropped (default); 90 = quarter turns")
+    parser.add_argument("--orientation-min-angle", type=_min_angle, default=MIN_ANGLE,
+                        help="Treat residual tilts below this many degrees as level, like 'rightwayup fix' "
+                             f"(default: {MIN_ANGLE}; 0 applies every estimate)")
+
+
+def _min_angle(value: str) -> float:
+    angle = float(value)
+    if not 0 <= angle < 45:
+        raise argparse.ArgumentTypeError("must be at least 0 and below 45 degrees")
+    return angle
 
 
 def load_orienter(args, strength: float):
@@ -34,12 +46,19 @@ def load_orienter(args, strength: float):
                          f"--no-orientation disables it. {exc}") from exc
 
 
-def orientation_details(result, orienter, snap: int) -> dict:
-    """Describe the exact correction passed to RightWayUp's correct() API."""
+def orientation_details(result, orienter, snap: int, min_angle: float = MIN_ANGLE) -> dict:
+    """Describe the exact correction applied with RightWayUp's correct() API.
+
+    A residual tilt below `min_angle` is within the model's error: it becomes
+    the nearest quarter turn rather than rotating and cropping a level photo.
+    """
     angle, confidence = float(result.angle_cw), float(result.confidence)
-    if not math.isfinite(angle) or not 0 <= angle < 360 or not 0 <= confidence <= 1:
-        raise ValueError("RightWayUp returned an invalid angle or confidence")
-    correction = (round(angle / snap) * snap % 360) if snap else angle
+    if not (math.isfinite(angle) and math.isfinite(confidence)):
+        raise ValueError("RightWayUp returned a non-finite angle or confidence")
+    # Upstream decoding can round to exactly 360.0, and float32 sums can slightly exceed 1.
+    angle, confidence = angle % 360, min(max(confidence, 0.0), 1.0)
+    quarter = round(angle / 90) * 90
+    correction = quarter % 360 if snap or abs(angle - quarter) < min_angle else angle
     if result.abstain:
         correction = 0
     return {
@@ -53,6 +72,7 @@ def orientation_details(result, orienter, snap: int) -> dict:
         "orientation_precision": orienter.precision,
         "orientation_device": orienter.device,
         "orientation_snap": snap,
+        "orientation_min_angle": min_angle,
     }
 
 

@@ -14,8 +14,15 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
+from tqdm import tqdm
 
-from fotosort.orientation import add_orientation_arguments, crop_rotation_corners, load_orienter, orientation_details
+from fotosort.orientation import (
+    MIN_ANGLE,
+    add_orientation_arguments,
+    crop_rotation_corners,
+    load_orienter,
+    orientation_details,
+)
 
 # --------------------------------------------------------------------------- styles
 
@@ -322,7 +329,7 @@ def save_like_original(out: Image.Image, original: Image.Image, dst: Path, quali
 
 
 def enhance_file(src: Path, dst: Path, style: str, strength: float, *, orienter=None,
-                 orientation_snap: int = 0) -> dict:
+                 orientation_snap: int = 0, orientation_min_angle: float = MIN_ANGLE) -> dict:
     from fotosort.quality import open_full
 
     # RAW decoders and EXIF-transposed PIL images do not retain a source filename.
@@ -339,15 +346,17 @@ def enhance_file(src: Path, dst: Path, style: str, strength: float, *, orienter=
         else:
             with ImageOps.exif_transpose(im) as oriented:
                 result = orienter.predict(oriented)
-                details = orientation_details(result, orienter, orientation_snap)
+                details = orientation_details(result, orienter, orientation_snap, orientation_min_angle)
                 # Tone calculations see only photo pixels, before continuous rotation adds borders.
-                toned = enhance(oriented, style, strength)
-                out = orienter.correct(toned, snap=orientation_snap or None, result=result)
-                cropped = crop_rotation_corners(out, oriented.size, details["orientation_correction_ccw"])
-                if cropped is not out:
-                    out.close()
-                out = cropped
-                toned.close()
+                out = enhance(oriented, style, strength)
+                correction = details["orientation_correction_ccw"]
+                if correction:  # abstained and upright photos need no rotation
+                    toned = out
+                    rotated = orienter.correct(toned, snap=90 if correction % 90 == 0 else None, result=result)
+                    toned.close()
+                    out = crop_rotation_corners(rotated, oriented.size, correction)
+                    if out is not rotated:
+                        rotated.close()
         details["orientation_crop_fraction"] = 1 - out.width * out.height / (im.width * im.height)
         details["output_width"], details["output_height"] = out.size
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -372,7 +381,8 @@ def enhancement_report(folder: Path):
     fields = ["source", "output", "style", "strength", "orientation_status", "orientation_angle_cw",
               "orientation_confidence", "orientation_abstain", "orientation_correction_ccw",
               "orientation_tier", "orientation_routed", "orientation_precision", "orientation_device",
-              "orientation_snap", "orientation_crop_fraction", "output_width", "output_height"]
+              "orientation_snap", "orientation_min_angle", "orientation_crop_fraction", "output_width",
+              "output_height"]
     with stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
@@ -381,7 +391,7 @@ def enhancement_report(folder: Path):
             writer.writerow(dict(source=str(src), output=str(dst), style=style, strength=strength, **details))
             stream.flush()
 
-        print(f"Enhancement report: {path}")
+        tqdm.write(f"Enhancement report: {path}")  # standalone runs open reports mid-progress-bar
         yield record
 
 
@@ -420,8 +430,6 @@ def main(argv=None) -> int:
         embedder = Embedder()
         style_emb = embedder.text_embeddings(list(STYLE_PROMPTS.values()), template="{}")
 
-    from tqdm import tqdm
-
     with ExitStack() as stack:
         reports = {}
         for src in tqdm(files, unit="img", desc="Enhancing"):
@@ -440,7 +448,8 @@ def main(argv=None) -> int:
             output_name = src if src.suffix.lower() in {".jpg", ".jpeg"} else src.with_suffix(".jpg")
             dst = unique_dest(out_dir, output_name, src.parent)
             details = enhance_file(src, dst, style, args.strength, orienter=orienter,
-                                   orientation_snap=args.orientation_snap)
+                                   orientation_snap=args.orientation_snap,
+                                   orientation_min_angle=args.orientation_min_angle)
             reports[out_dir](src, dst, style, args.strength, details)
             tqdm.write(f"{src.name}: {style}, orientation {details['orientation_status']}")
     print(f"Enhanced {len(files)} images.")
