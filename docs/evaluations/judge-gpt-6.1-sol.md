@@ -1,6 +1,6 @@
 # OpenAI judge default migration — 2026-10-11
 
-PR #30 proposes `gpt-6.1-sol` as the OpenAI default when `--judge` is enabled.
+PR #30 made `gpt-6.1-sol` the OpenAI default when `--judge` is enabled.
 Use `--judge-model gpt-5.6-sol` to select the previous default. Cloud judging
 remains opt-in, and local endpoints still require an explicit model.
 
@@ -30,6 +30,12 @@ images. It reported a parsed pick, a subject label, and 5,802 input / 184
 output tokens. This is author-reported API compatibility evidence; it was
 not rerun during this review and does not establish selection quality.
 
+After that review, the same request path completed a full run on one private
+478-photo safari folder: 16 judged groups, 55 picks (51 named by the judge),
+and 499,688 input / 14,632 output tokens. That confirms the request path at
+folder scale. It is still not a quality comparison, because there was no
+matched run with the previous default and no reviewed feedback.
+
 Automated regression coverage exercises the CLI model choice through the
 OpenAI SDK with a loopback mock server, including default and explicit
 models, image requests, parsed verdicts, subject naming, and token accounting.
@@ -43,8 +49,9 @@ The owner confirmed on 2026-10-11 that no reviewed evaluation set is available.
 The existing archived shortlist evaluations contain no matched final judgments
 from these two models, so they cannot validate this migration. Public vision
 benchmarks and a successful API response do not replace photographer feedback.
-The PR remains a draft pending the calibration required by `AGENTS.md` and
-`CONTRIBUTING.md`.
+On 2026-10-11 the owner chose to merge the default change without
+calibration, so the calibration required by `AGENTS.md` and `CONTRIBUTING.md`
+remains open follow-up work.
 
 - Obtain explicit favourite, reject, acceptable-alternative, or pairwise
   feedback on representative photos; keep private photos and manifests out
@@ -54,6 +61,7 @@ The PR remains a draft pending the calibration required by `AGENTS.md` and
   model identities, token usage, failures, runtime, and cost separately.
 - Use the [evaluation workflow](../evaluation.md) to publish a sanitized
   comparison, including unknown outcomes and any regressions. Have the
-  maintainer assess the evidence before promoting this default.
+  maintainer confirm or revert this default based on the evidence.
 
-Tracked in [issue #29](https://github.com/JRS1986/FotoSort/issues/29).
+Tracked in [issue #31](https://github.com/JRS1986/FotoSort/issues/31); the
+migration itself was [issue #29](https://github.com/JRS1986/FotoSort/issues/29).
