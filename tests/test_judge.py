@@ -1,9 +1,10 @@
 import json
 import sys
+import threading
 from functools import partial
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 
-import httpx
 import openai
 import pytest
 from PIL import Image
@@ -23,27 +24,51 @@ def test_cli_openai_model_reaches_pick_and_subject_requests(monkeypatch, tmp_pat
     Image.new("RGB", (16, 16), (10, 20, 30)).save(path)
     requests = []
 
-    def respond(request):
-        assert request.url.path == "/v1/chat/completions"
-        requests.append(json.loads(request.content))
+    def respond(body):
+        requests.append(body)
         result = ({"picks": [{"photo": 1, "reason": "sharp"}]} if len(requests) == 1 else
                   {"subjects": [{"photo": 1, "subject": "elephant"}]})
-        return httpx.Response(200, json={
+        return {
             "id": "test", "object": "chat.completion", "created": 0, "model": expected_model,
             "choices": [{"index": 0, "finish_reason": "stop",
                          "message": {"role": "assistant", "content": json.dumps(result)}}],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        })
+        }
 
-    with httpx.Client(transport=httpx.MockTransport(respond)) as http_client:
-        monkeypatch.setattr(openai, "OpenAI", partial(openai.OpenAI, http_client=http_client))
-        args = parse_args([str(tmp_path), "--judge", *model_flags])
-        judge = Judge(args.judge_provider, args.judge_model, detail=args.judge_detail)
-        verdict = judge.judge([path], "wildlife", "2026-10-11", 1)
-        assert verdict.error is None
-        assert verdict.picks == [str(path)] and verdict.reasons[str(path)] == "sharp"
-        assert judge.name_subjects([path], ["elephant"]) == {str(path): "elephant"}
-        assert judge.usage == {"input": 20, "output": 10}
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            if self.path != "/v1/chat/completions":
+                self.send_error(404)
+                return
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            data = json.dumps(respond(body)).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    with HTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            # Redirect the SDK, not Judge.base_url: exercise the cloud payload.
+            monkeypatch.setattr(openai, "OpenAI", partial(
+                openai.OpenAI, base_url=f"http://127.0.0.1:{server.server_port}/v1", max_retries=0))
+            args = parse_args([str(tmp_path), "--judge", *model_flags])
+            judge = Judge(args.judge_provider, args.judge_model, detail=args.judge_detail)
+            with judge.client:
+                verdict = judge.judge([path], "wildlife", "2026-10-11", 1)
+                assert verdict.error is None
+                assert verdict.picks == [str(path)] and verdict.reasons[str(path)] == "sharp"
+                assert judge.name_subjects([path], ["elephant"]) == {str(path): "elephant"}
+                assert judge.usage == {"input": 20, "output": 10}
+        finally:
+            server.shutdown()
+            thread.join()
 
     assert len(requests) == 2
     for body in requests:

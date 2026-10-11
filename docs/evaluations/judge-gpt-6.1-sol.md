@@ -31,7 +31,7 @@ output tokens. This is author-reported API compatibility evidence; it was
 not rerun during this review and does not establish selection quality.
 
 Automated regression coverage exercises the CLI model choice through the
-OpenAI SDK with an in-memory HTTP transport, including default and explicit
+OpenAI SDK with a loopback mock server, including default and explicit
 models, image requests, parsed verdicts, subject naming, and token accounting.
 It also checks Anthropic model routing with a stub client. These checks make
 no external requests and cannot establish live model behavior or photographic
