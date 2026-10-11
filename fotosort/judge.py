@@ -1,8 +1,7 @@
 """Optional final pass: a vision model looks at each group's shortlist and picks
 the keepers the way a photo editor would.
 
-Providers: "openai" (OPENAI_API_KEY, default model gpt-5.6-sol, OpenAI's
-strongest vision model as of September 2026) or "anthropic"
+Providers: "openai" (OPENAI_API_KEY, default model gpt-6.1-sol) or "anthropic"
 (ANTHROPIC_API_KEY, default model claude-opus-5). A key can also be read from
 a file with --key-file (a .env line like OPENAI_API_KEY=..., or a YAML line
 like openai_api_key: ...)."""
@@ -24,7 +23,7 @@ from fotosort.award import AWARD_PROMPT, AWARD_SYSTEM, CURATION_STAGE, NOMINATIO
 from fotosort.editing import PRESETS
 from fotosort.quality import load_small, open_full, subject_region
 
-DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "anthropic": "claude-opus-5"}
+DEFAULT_MODELS = {"openai": "gpt-6.1-sol", "anthropic": "claude-opus-5"}
 KEY_NAMES = {"openai": ("OPENAI_API_KEY", "openai_api_key"), "anthropic": ("ANTHROPIC_API_KEY", "anthropic_api_key")}
 
 

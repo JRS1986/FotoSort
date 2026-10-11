@@ -22,6 +22,15 @@ All notable changes to FotoSort are documented here. The format follows
 - Give standalone enhanced copies unique filenames on repeated exports, avoiding
   replacement of existing photos or outputs when names collide.
 
+### Changed
+- Default the opt-in OpenAI judge to `gpt-6.1-sol` instead of `gpt-5.6-sol`;
+  `--judge-model gpt-5.6-sol` selects the previous default. Selection behavior
+  has not been calibrated on reviewed photos: no reviewed set exists, and the
+  owner chose to adopt the default before calibration, which is tracked in
+  [issue #31](https://github.com/JRS1986/FotoSort/issues/31). See the
+  [validation record](docs/evaluations/judge-gpt-6.1-sol.md) for API compatibility,
+  pricing sources, and remaining work.
+
 ### Fixed
 - Preserve MakerNote offsets and opaque EXIF data when normalizing enhanced
   copies. Patch existing orientation and image-dimension values without moving
