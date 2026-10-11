@@ -1,4 +1,81 @@
-from fotosort.judge import parse_verdict
+import json
+import sys
+from functools import partial
+from types import SimpleNamespace
+
+import httpx
+import openai
+import pytest
+from PIL import Image
+
+from fotosort.cli import parse_args
+from fotosort.judge import Judge, parse_verdict
+
+
+@pytest.mark.parametrize("model_flags,expected_model", [
+    ([], "gpt-6.1-sol"),
+    (["--judge-model", "gpt-5.6-sol"], "gpt-5.6-sol"),
+    (["--judge-model", "custom-vision-model"], "custom-vision-model"),
+])
+def test_cli_openai_model_reaches_pick_and_subject_requests(monkeypatch, tmp_path, model_flags, expected_model):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    path = tmp_path / "photo.jpg"
+    Image.new("RGB", (16, 16), (10, 20, 30)).save(path)
+    requests = []
+
+    def respond(request):
+        assert request.url.path == "/v1/chat/completions"
+        requests.append(json.loads(request.content))
+        result = ({"picks": [{"photo": 1, "reason": "sharp"}]} if len(requests) == 1 else
+                  {"subjects": [{"photo": 1, "subject": "elephant"}]})
+        return httpx.Response(200, json={
+            "id": "test", "object": "chat.completion", "created": 0, "model": expected_model,
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": json.dumps(result)}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        })
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as http_client:
+        monkeypatch.setattr(openai, "OpenAI", partial(openai.OpenAI, http_client=http_client))
+        args = parse_args([str(tmp_path), "--judge", *model_flags])
+        judge = Judge(args.judge_provider, args.judge_model, detail=args.judge_detail)
+        verdict = judge.judge([path], "wildlife", "2026-10-11", 1)
+        assert verdict.error is None
+        assert verdict.picks == [str(path)] and verdict.reasons[str(path)] == "sharp"
+        assert judge.name_subjects([path], ["elephant"]) == {str(path): "elephant"}
+        assert judge.usage == {"input": 20, "output": 10}
+
+    assert len(requests) == 2
+    for body in requests:
+        assert body["model"] == expected_model
+        assert body["response_format"] == {"type": "json_object"}
+        assert body["max_completion_tokens"] == 4000 and "max_tokens" not in body
+        images = [part["image_url"] for part in body["messages"][1]["content"] if part["type"] == "image_url"]
+        assert len(images) == 1 and images[0]["detail"] == "high"
+        assert images[0]["url"].startswith("data:image/jpeg;base64,")
+
+
+@pytest.mark.parametrize("model_flags,expected_model", [
+    ([], "claude-opus-5"),
+    (["--judge-model", "custom-anthropic-model"], "custom-anthropic-model"),
+])
+def test_cli_anthropic_model_routing_is_unchanged(monkeypatch, model_flags, expected_model):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    requests = []
+
+    def create(**kwargs):
+        requests.append(kwargs)
+        return SimpleNamespace(usage=SimpleNamespace(input_tokens=10, output_tokens=5),
+                               stop_reason="end_turn", content=[SimpleNamespace(type="text", text='{"picks": []}')])
+
+    client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=create)))
+    monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=lambda **kwargs: client))
+    args = parse_args([".", "--judge", "--judge-provider", "anthropic", *model_flags])
+    judge = Judge(args.judge_provider, args.judge_model)
+    verdict = judge._judge([("image", [])], ["photo"], "Choose a photo; reply with JSON.")
+    assert verdict.error is None and verdict.picks == []
+    assert len(requests) == 1 and requests[0]["model"] == expected_model
+    assert judge.usage == {"input": 10, "output": 5}
 
 
 def test_parse_verdict_maps_1_based_photos_to_ids():

@@ -1,9 +1,7 @@
 """Optional final pass: a vision model looks at each group's shortlist and picks
 the keepers the way a photo editor would.
 
-Providers: "openai" (OPENAI_API_KEY, default model gpt-6.1-sol: on par with or
-better than GPT-6 Sol on OpenAI's vision evaluations, at a fifth of GPT-6 Astra's
-price, as of October 2026) or "anthropic"
+Providers: "openai" (OPENAI_API_KEY, default model gpt-6.1-sol) or "anthropic"
 (ANTHROPIC_API_KEY, default model claude-opus-5). A key can also be read from
 a file with --key-file (a .env line like OPENAI_API_KEY=..., or a YAML line
 like openai_api_key: ...)."""

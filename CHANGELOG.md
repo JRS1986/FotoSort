@@ -23,10 +23,12 @@ All notable changes to FotoSort are documented here. The format follows
   replacement of existing photos or outputs when names collide.
 
 ### Changed
-- Default the OpenAI judge to `gpt-6.1-sol` instead of `gpt-5.6-sol`. It costs
-  half as much ($2 / $10 per 1M input/output tokens), and OpenAI reports it on
-  par with or better than GPT-6 Sol on vision evaluations. Selection behavior has
-  not been calibrated on reviewed photos; `--judge-model` restores any model.
+- Default the opt-in OpenAI judge to `gpt-6.1-sol` instead of `gpt-5.6-sol`;
+  `--judge-model gpt-5.6-sol` selects the previous default. Selection behavior
+  has not been calibrated on reviewed photos; calibration is still required
+  before this default change is ready to merge. See the
+  [validation record](docs/evaluations/judge-gpt-6.1-sol.md) for API compatibility,
+  pricing sources, and remaining work.
 
 ### Fixed
 - Preserve MakerNote offsets and opaque EXIF data when normalizing enhanced
