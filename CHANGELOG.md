@@ -7,6 +7,8 @@ All notable changes to FotoSort are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Add a repeatable `--exclude-dir NAME` option so recursive trip-wide runs can skip
+  earlier outputs such as per-chapter `Selection` folders at any depth.
 - Run local RightWayUp orientation correction during `--enhance` exports and
   `fotosort enhance`, including tilted horizons with empty corners cropped while
   retaining the upright aspect ratio. Reuse one Max model per export and honour

@@ -17,6 +17,7 @@ match v0.2.0. Provider model access depends on your account or server.
 | `--dxo` | off | `all`: PureRAW on every RAW before analysis; `picks`: only on the selected frames |
 | `--dxo-app` / `--dxo-dir` / `--dxo-wait` | PureRAW 6 / `DxO` next to the RAWs / 8 h | hand-off application, output folder, wait time (0 = existing outputs only) |
 | `--recursive` | | also scan subfolders |
+| `--exclude-dir` | | with `--recursive`, skip folders with this name at any depth (repeatable), e.g. earlier `Selection` outputs; `Highlights`, `AwardRoll`, `Enhanced`, `DxO` and hidden folders are always skipped. Pass the same names with `--apply-report` |
 | `--no-raw` | | ignore RAW files (by default RAW files without a same-named JPEG are analysed) |
 | `--with-sidecars` | | move/copy RAW and XMP files with the same name |
 | `--max-per-group` | 5 | base picks per subject per day |
