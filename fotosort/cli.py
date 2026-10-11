@@ -185,7 +185,7 @@ def parse_args(argv=None):
     p.add_argument("--judge", action="store_true",
                    help="Let a vision model choose the final picks from each group's shortlist")
     p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic"], help="API for --judge")
-    p.add_argument("--judge-model", help="Model for --judge (default: gpt-5.6-sol / claude-opus-5)")
+    p.add_argument("--judge-model", help="Model for --judge (default: gpt-6.1-sol / claude-opus-5)")
     p.add_argument("--judge-coverage", choices=["preselect", "full"],
                    help="preselect (default): local shortlist; full: every distinct eligible file, "
                         "bypassing the award-roll candidate cap")

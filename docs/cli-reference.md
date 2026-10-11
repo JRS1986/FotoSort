@@ -44,7 +44,7 @@ match v0.2.0. Provider model access depends on your account or server.
 | `--person-agree` | 0.2 | required CLIP probability mass on people labels for the person override; a person covering half the frame bypasses this check |
 | `--detector` | yolov8m.pt | YOLOv8 weights; smaller variants trade detection quality for speed |
 | `--judge` | off | let a vision model choose the final picks |
-| `--judge-provider` / `--judge-model` | openai / gpt-5.6-sol | configured API/model defaults (`anthropic` / `claude-opus-5`); override with an image-capable model available to your account |
+| `--judge-provider` / `--judge-model` | openai / gpt-6.1-sol | configured API/model defaults (`anthropic` / `claude-opus-5`); override with an image-capable model available to your account |
 | `--judge-species` / `--no-judge-species` | on | with the standard judge, name picked subjects for species folders; adds requests (about one per 12 picks) |
 | `--judge-coverage` / `--judge-chunk` | preselect / 24 | `preselect`: local shortlist; `full`: every distinct eligible file, bypassing the award candidate cap. Standard winner comparisons use at most the larger of chunk size and twice the keeper budget; award-roll uses four times the roll target |
 | `--preselect` / `--preselect-min` / `--preselect-share` | 3 / 12 / 0.5 | standard-mode shortlist: keeper-budget multiple, minimum and group-share floor. Scene coverage may expand it; award-roll uses its own strict global cap |

@@ -22,6 +22,12 @@ All notable changes to FotoSort are documented here. The format follows
 - Give standalone enhanced copies unique filenames on repeated exports, avoiding
   replacement of existing photos or outputs when names collide.
 
+### Changed
+- Default the OpenAI judge to `gpt-6.1-sol` instead of `gpt-5.6-sol`. It costs
+  half as much ($2 / $10 per 1M input/output tokens), and OpenAI reports it on
+  par with or better than GPT-6 Sol on vision evaluations. Selection behavior has
+  not been calibrated on reviewed photos; `--judge-model` restores any model.
+
 ### Fixed
 - Preserve MakerNote offsets and opaque EXIF data when normalizing enhanced
   copies. Patch existing orientation and image-dimension values without moving
