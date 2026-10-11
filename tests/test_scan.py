@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from fotosort import cli
 from fotosort.scan import find_images, is_raw
 
 
@@ -20,3 +23,31 @@ def test_recursive_scan_excludes_output_and_hidden_dirs(tmp_path):
     found = find_images(tmp_path, recursive=True, exclude_dirs={"Highlights"})
     assert [p.name for p in found] == ["x.jpg"]
     assert is_raw(Path("q.NEF")) and not is_raw(Path("q.jpg"))
+
+
+def test_exclude_dir_skips_named_folders_at_any_depth(tmp_path, monkeypatch):
+    # A trip folder with earlier per-chapter outputs that must not be re-analysed.
+    for rel in ["day1/a.jpg", "day1/Selection/giraffe/a.jpg", "day2/b.jpg",
+                "day2/Selection_Enhanced/b.jpg", "_DELETE_ME/day1/a.jpg", "day2/Selected/c.jpg"]:
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_bytes(b"x")
+    seen = {}
+
+    def scan(root, recursive, exclude_dirs, include_raw=True):
+        seen["exclude"] = exclude_dirs
+        return find_images(root, recursive, exclude_dirs, include_raw)
+
+    monkeypatch.setattr(cli, "find_images", scan)
+    monkeypatch.setattr(cli, "Photo", lambda **kw: pytest.fail("stop after the scan"))
+    with pytest.raises(pytest.fail.Exception):
+        cli.main([str(tmp_path), "--recursive", "--exclude-dir", "Selection",
+                  "--exclude-dir", "Selection_Enhanced", "--exclude-dir", "_DELETE_ME"])
+    assert seen["exclude"] == {"Highlights", "Selection", "Selection_Enhanced", "_DELETE_ME"}
+    found = find_images(tmp_path, True, seen["exclude"])
+    assert [str(p.relative_to(tmp_path)) for p in found] == ["day1/a.jpg", "day2/Selected/c.jpg", "day2/b.jpg"]
+
+
+@pytest.mark.parametrize("value", ["", ".", "..", "Selection/giraffe"])
+def test_exclude_dir_accepts_folder_names_only(tmp_path, value):
+    with pytest.raises(SystemExit):
+        cli.parse_args([str(tmp_path), "--exclude-dir", value])

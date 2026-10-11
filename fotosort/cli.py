@@ -131,6 +131,12 @@ class Photo:
         return self.time.strftime("%Y-%m-%d") if self.time else "unknown-date"
 
 
+def _folder_name(value: str) -> str:
+    if value in ("", ".", "..") or "/" in value or os.sep in value:
+        raise argparse.ArgumentTypeError(f"expected a folder name, not a path: {value!r}")
+    return value
+
+
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
         prog="fotosort",
@@ -154,6 +160,9 @@ def parse_args(argv=None):
     g.add_argument("--copy", action="store_true", help="Copy picks into Highlights instead of moving")
     p.add_argument("--highlights", help="Output subfolder (Highlights, or AwardRoll in award-roll mode)")
     p.add_argument("--recursive", action="store_true", help="Also scan subfolders")
+    p.add_argument("--exclude-dir", action="append", default=[], type=_folder_name, metavar="NAME",
+                   help="With --recursive: skip folders with this name at any depth, e.g. earlier Selection "
+                        "outputs (repeatable; Highlights/AwardRoll/Enhanced/DxO are always skipped)")
     p.add_argument("--dxo", nargs="?", const="all", choices=["all", "picks"],
                    help="Run RAW files through DxO PureRAW first: 'all' before analysis (denoised files are scored), "
                         "'picks' only the selected ones before enhancing/copying. Existing outputs in the DxO folder "
@@ -1265,7 +1274,8 @@ def main(argv=None) -> int:
         print(f"Not a folder: {root}", file=sys.stderr)
         return 2
     out_dir = root / args.highlights
-    files = find_images(root, args.recursive, exclude_dirs={args.highlights}, include_raw=not args.no_raw)
+    files = find_images(root, args.recursive, exclude_dirs={args.highlights, *args.exclude_dir},
+                        include_raw=not args.no_raw)
     if args.limit:
         files = files[: args.limit]
     if not files:
